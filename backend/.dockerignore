@@ -1,0 +1,5 @@
+dist
+.env
+build.sh
+node_modules
+package-lock.json
