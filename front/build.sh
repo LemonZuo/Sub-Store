@@ -54,9 +54,6 @@ else
     echo "Docker login successful."
 fi
 
-# 更新 VERSION 文件
-# echo ${VERSION} > VERSION
-
 # 创建并使用一个新的 Buildx 构建器实例，如果已存在则使用现有的
 BUILDER_NAME=multi-platform-build
 docker buildx create --name ${BUILDER_NAME} --use || true
@@ -74,8 +71,6 @@ docker buildx build \
 
 # 登出 Docker Hub
 docker logout
-# 恢复 VERSION 文件
-git restore VERSION
 
 # 记录构建结束时间
 end_time=$(date +%s)
