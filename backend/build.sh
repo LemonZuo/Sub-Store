@@ -65,7 +65,6 @@ docker buildx inspect --bootstrap
 # 使用 Docker Buildx 构建镜像，同时标记为 latest 和 VERSION，支持多架构
 docker buildx build --no-cache \
   --platform linux/amd64,linux/arm64 \
-  --build-arg NPM_CONFIG_REGISTRY=https://registry.npmmirror.com \
   -t ${HUB_USER}/${HUB_REPO}:${VERSION} \
   -t ${HUB_USER}/${HUB_REPO} . \
   --push \
