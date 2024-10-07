@@ -14,8 +14,11 @@ COPY . ./
 # 创建 dist 目录
 RUN mkdir -p dist
 
+# 设置环境变量
+ENV NODE_OPTIONS=--max_old_space_size=4096
+
 # 运行构建命令
-RUN pnpm run bundle
+RUN pnpm run build && pnpm run bundle
 
 # 运行阶段
 FROM node:18-alpine
