@@ -4,7 +4,8 @@
 start_time=$(date +%s)
 
 # 获取最新的标签名
-TAG=$(git describe --tags --abbrev=0)
+# TAG=$(git describe --tags --abbrev=0)
+TAG=$(curl -s https://api.github.com/repos/sub-store-org/Sub-Store-Front-End/tags | jq -r '.[0].name')
 
 # 检查是否获取到标签名
 if [ -z "$TAG" ]; then
