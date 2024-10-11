@@ -6,7 +6,7 @@ FROM alpine AS downloader
 WORKDIR /app
 
 # 安装curl、下载sub-store.bundle.js
-RUN apk update && apk add curl && curl -LJOk https://github.com/sub-store-org/Sub-Store/releases/latest/download/sub-store.bundle.js
+RUN wget -O sub-store.bundle.js https://github.com/sub-store-org/Sub-Store/releases/latest/download/sub-store.bundle.js
 
 # --------------------
 # 第二阶段：构建运行镜像

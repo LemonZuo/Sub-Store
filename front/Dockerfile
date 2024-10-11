@@ -5,12 +5,8 @@ FROM alpine AS downloader
 
 WORKDIR /app
 
-# 更新包列表并安装curl
-RUN apk update && apk add curl
-
-# 下载 nginx.conf 和前端构建产物 dist.zip
-RUN curl -LJOk https://sub-store-org.github.io/resource/ssm/nginx.conf && \
-    curl -LJOk https://github.com/sub-store-org/Sub-Store-Front-End/releases/latest/download/dist.zip && \
+# 下载 前端构建产物 dist.zip
+RUN wget -O dist.zip https://github.com/sub-store-org/Sub-Store-Front-End/releases/latest/download/dist.zip && \
     unzip dist.zip && \
     rm dist.zip
 
@@ -25,7 +21,7 @@ WORKDIR /app
 COPY --from=downloader /app/dist ./www
 
 # 复制自定义的 nginx.conf
-COPY --from=downloader /app/nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # 暴露端口
 EXPOSE 80
