@@ -433,8 +433,8 @@ function URI_VLESS() {
         }
 
         const proxy = {
-            type: 'vless',
             name,
+            type: 'vless',
             server,
             port,
             uuid,

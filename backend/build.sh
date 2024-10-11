@@ -13,6 +13,7 @@ if [ -z "$TAG" ]; then
   echo "No Git tags found."
   exit 1
 fi
+echo "build version: $TAG"
 
 # 转义标签名中的特殊字符
 ESCAPED_TAG=$(printf '%s\n' "$TAG" | sed 's/[\/&]/\\&/g')
@@ -65,6 +66,7 @@ docker buildx inspect --bootstrap
 # 使用 Docker Buildx 构建镜像，同时标记为 latest 和 VERSION，支持多架构
 docker buildx build --no-cache \
   --platform linux/amd64,linux/arm64 \
+  -f ${FILE} \
   -t ${HUB_USER}/${HUB_REPO}:${VERSION} \
   -t ${HUB_USER}/${HUB_REPO} . \
   --push \

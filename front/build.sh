@@ -12,6 +12,7 @@ if [ -z "$TAG" ]; then
   echo "No Git tags found."
   exit 1
 fi
+echo "build version: $TAG"
 
 # 转义标签名中的特殊字符
 ESCAPED_TAG=$(printf '%s\n' "$TAG" | sed 's/[\/&]/\\&/g')
