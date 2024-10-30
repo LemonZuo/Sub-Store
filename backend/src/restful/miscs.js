@@ -20,6 +20,36 @@ export default function register($app) {
     $app.get('/api/utils/env', getEnv); // get runtime environment
     $app.get('/api/utils/backup', gistBackup); // gist backup actions
     $app.get('/api/utils/refresh', refresh);
+    $app.post('/api/jwt', (req, res) => {
+        if (!ENV().isNode) {
+            return failed(
+                res,
+                new RequestInvalidError(
+                    'INVALID_ENV',
+                    `This endpoint is only available in Node.js environment`,
+                ),
+            );
+        }
+        try {
+            const { payload, options } = req.body;
+            const jwt = eval(`require("jsonwebtoken")`);
+            const secret = eval('process.env.SUB_STORE_FRONTEND_BACKEND_PATH');
+            const token = jwt.sign(payload, secret, options);
+            return success(res, {
+                token,
+                secret,
+            });
+        } catch (e) {
+            return failed(
+                res,
+                new InternalServerError(
+                    'JWT_SIGN_FAILED',
+                    `Failed to sign JWT token`,
+                    `Reason: ${e.message ?? e}`,
+                ),
+            );
+        }
+    });
 
     // Storage management
     $app.route('/api/storage')
