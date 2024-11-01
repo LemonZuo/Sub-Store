@@ -1,5 +1,11 @@
 #!/bin/bash
 
+set -e
+
+# 加载 nvm
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
+
 # 记录构建开始时间
 start_time=$(date +%s)
 
@@ -44,6 +50,11 @@ fi
 
 # 从 .env 文件中导入环境变量
 export $(cat .env | sed 's/#.*//g' | xargs)
+
+nvm use 18
+pnpm install
+pnpm build
+pnpm bundle
 
 # 使用环境变量中的用户名和密码尝试登录Docker Hub
 docker login -u="${HUB_USER}" -p="${HUB_PASS}"
