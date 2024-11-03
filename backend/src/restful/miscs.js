@@ -70,6 +70,9 @@ export default function register($app) {
 }
 
 function getEnv(req, res) {
+    if (req.query.share) {
+        env.feature.share = true;
+    }
     success(res, env);
 }
 
@@ -188,12 +191,11 @@ async function signToken(req, res) {
                 token = nanoid.customAlphabet(nanoid.urlAlphabet)();
             } while (tokens.find((t) => t.token === token));
         }
-
         tokens.push({
             ...payload,
             token,
             createdAt: Date.now(),
-            expiresIn: expiresIn > 0 ? ms(expiresIn) : undefined,
+            expiresIn: expiresIn > 0 ? options?.expiresIn : undefined,
             exp: expiresIn > 0 ? Date.now() + expiresIn : undefined,
         });
 

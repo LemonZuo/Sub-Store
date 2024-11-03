@@ -202,11 +202,13 @@ export default function serve() {
                     be_api_rewrite,
                     createProxyMiddleware({
                         target: `http://127.0.0.1:${port}`,
-                        changeOrigin: true,
                         pathRewrite: (path) => {
-                            return path.startsWith(be_api_rewrite)
+                            const newPath = path.startsWith(be_api_rewrite)
                                 ? path.replace(be_api_rewrite, be_api)
                                 : path;
+                            return newPath.includes('?')
+                                ? `${newPath}&share=true`
+                                : `${newPath}?share=true`;
                         },
                     }),
                 );
