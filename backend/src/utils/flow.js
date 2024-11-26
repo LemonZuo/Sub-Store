@@ -6,21 +6,19 @@ import $ from '@/core/app';
 import headersResourceCache from '@/utils/headers-resource-cache';
 
 export function getFlowField(headers) {
-    let subKey = '';
-    let webPageKey = '';
-
-    Object.keys(headers).some((k) => {
-        if (/SUBSCRIPTION-USERINFO/i.test(k)) {
-            subKey = k;
-        } else if (/PROFILE-WEB-PAGE-URL/i.test(k)) {
-            webPageKey = k;
+    const keys = Object.keys(headers);
+    let sub = '';
+    let webPage = '';
+    for (let k of keys) {
+        const lower = k.toLowerCase();
+        if (lower === 'subscription-userinfo') {
+            sub = headers[k];
+        } else if (lower === 'profile-web-page-url') {
+            webPage = headers[k];
         }
-        return subKey && webPageKey;
-    });
+    }
 
-    return `${headers[subKey] || ''}${
-        webPageKey ? `;app_url=${headers[webPageKey]}` : ''
-    }`;
+    return `${sub || ''}${webPage ? `;app_url=${webPage}` : ''}`;
 }
 export async function getFlowHeaders(
     rawUrl,
@@ -65,7 +63,7 @@ export async function getFlowHeaders(
         proxy = proxy || eval('process.env.SUB_STORE_BACKEND_DEFAULT_PROXY');
     }
     const userAgent = ua || defaultFlowUserAgent || 'clash';
-    const requestTimeout = timeout || defaultTimeout;
+    const requestTimeout = timeout || defaultTimeout || 8000;
     const id = hex_md5(userAgent + url);
     const cached = headersResourceCache.get(id);
     let flowInfo;
@@ -205,7 +203,7 @@ export function parseFlowHeaders(flowHeaders) {
         : undefined;
 
     const appUrlMatch = flowHeaders.match(/app_url=(.*?)\s*?(;|$)/);
-    const appUrl = appUrlMatch ? appUrlMatch[1] : undefined;
+    const appUrl = appUrlMatch ? decodeURIComponent(appUrlMatch[1]) : undefined;
 
     const planNameMatch = flowHeaders.match(/plan_name=(.*?)\s*?(;|$)/);
     const planName = planNameMatch
