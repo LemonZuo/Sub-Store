@@ -27,6 +27,42 @@ function surge_port_hopping(raw) {
     };
 }
 
+function URI_PROXY() {
+    // socks5+tls
+    // socks5
+    // http, https(可以这么写)
+    const name = 'URI PROXY Parser';
+    const test = (line) => {
+        return /^(socks5\+tls|socks5|http|https):\/\//.test(line);
+    };
+    const parse = (line) => {
+        // parse url
+        // eslint-disable-next-line no-unused-vars
+        let [__, type, tls, username, password, server, port, query, name] =
+            line.match(
+                /^(socks5|http|http)(\+tls|s)?:\/\/(?:(.*?):(.*?)@)?(.*?):(\d+?)(\?.*?)?(?:#(.*?))?$/,
+            );
+
+        const proxy = {
+            name:
+                name != null
+                    ? decodeURIComponent(name)
+                    : `${type} ${server}:${port}`,
+            type,
+            tls: tls ? true : false,
+            server,
+            port,
+            username:
+                username != null ? decodeURIComponent(username) : undefined,
+            password:
+                password != null ? decodeURIComponent(password) : undefined,
+        };
+
+        return proxy;
+    };
+    return { name, test, parse };
+}
+
 // Parse SS URI format (only supports new SIP002, legacy format is depreciated).
 // reference: https://github.com/shadowsocks/shadowsocks-org/wiki/SIP002-URI-Scheme
 function URI_SS() {
@@ -46,7 +82,15 @@ function URI_SS() {
         content = content.split('#')[0]; // strip proxy name
         // handle IPV4 and IPV6
         let serverAndPortArray = content.match(/@([^/]*)(\/|$)/);
-        let userInfoStr = Base64.decode(content.split('@')[0]);
+
+        let rawUserInfoStr = decodeURIComponent(content.split('@')[0]); // 其实应该分隔之后, 用户名和密码再 decodeURIComponent. 但是问题不大
+        let userInfoStr;
+        if (rawUserInfoStr?.startsWith('2022-blake3-')) {
+            userInfoStr = rawUserInfoStr;
+        } else {
+            userInfoStr = Base64.decode(rawUserInfoStr);
+        }
+
         let query = '';
         if (!serverAndPortArray) {
             if (content.includes('?')) {
@@ -71,16 +115,21 @@ function URI_SS() {
             userInfoStr = content.split('@')[0];
             serverAndPortArray = content.match(/@([^/]*)(\/|$)/);
         }
+
         const serverAndPort = serverAndPortArray[1];
         const portIdx = serverAndPort.lastIndexOf(':');
         proxy.server = serverAndPort.substring(0, portIdx);
         proxy.port = `${serverAndPort.substring(portIdx + 1)}`.match(
             /\d+/,
         )?.[0];
-
-        const userInfo = userInfoStr.match(/(^.*?):(.*$)/);
-        proxy.cipher = userInfo[1];
-        proxy.password = userInfo[2];
+        let userInfo = userInfoStr.match(/(^.*?):(.*$)/);
+        proxy.cipher = userInfo?.[1];
+        proxy.password = userInfo?.[2];
+        // if (!proxy.cipher || !proxy.password) {
+        //     userInfo = rawUserInfoStr.match(/(^.*?):(.*$)/);
+        //     proxy.cipher = userInfo?.[1];
+        //     proxy.password = userInfo?.[2];
+        // }
 
         // handle obfs
         const idx = content.indexOf('?plugin=');
@@ -380,6 +429,7 @@ function URI_VMess() {
                         proxy[`${proxy.network}-opts`] = {
                             'grpc-service-name': getIfNotBlank(transportPath),
                             '_grpc-type': getIfNotBlank(params.type),
+                            '_grpc-authority': getIfNotBlank(params.authority),
                         };
                     } else {
                         const opts = {
@@ -515,6 +565,9 @@ function URI_VLESS() {
             }
             if (params.serviceName) {
                 opts[`${proxy.network}-service-name`] = params.serviceName;
+                if (['grpc'].includes(proxy.network) && params.authority) {
+                    opts['_grpc-authority'] = params.authority;
+                }
             } else if (isShadowrocket && params.path) {
                 if (!['ws', 'http', 'h2'].includes(proxy.network)) {
                     opts[`${proxy.network}-service-name`] = params.path;
@@ -842,6 +895,11 @@ function URI_Trojan() {
     };
 
     const parse = (line) => {
+        const matched = /^(trojan:\/\/.*?@.*?)(:(\d+))?\/?(\?.*?)?$/.exec(line);
+        const port = matched?.[2];
+        if (!port) {
+            line = line.replace(matched[1], `${matched[1]}:443`);
+        }
         let [newLine, name] = line.split(/#(.+)/, 2);
         const parser = getTrojanURIParser();
         const proxy = parser.parse(newLine);
@@ -871,6 +929,8 @@ function Clash_All() {
         const proxy = JSON.parse(line);
         if (
             ![
+                'mieru',
+                'juicity',
                 'ss',
                 'ssr',
                 'vmess',
@@ -884,6 +944,7 @@ function Clash_All() {
                 'hysteria2',
                 'wireguard',
                 'ssh',
+                'direct',
             ].includes(proxy.type)
         ) {
             throw new Error(
@@ -1182,6 +1243,14 @@ function Loon_WireGuard() {
     return { name, test, parse };
 }
 
+function Surge_Direct() {
+    const name = 'Surge Direct Parser';
+    const test = (line) => {
+        return /^.*=\s*direct/.test(line.split(',')[0]);
+    };
+    const parse = (line) => getSurgeParser().parse(line);
+    return { name, test, parse };
+}
 function Surge_SSH() {
     const name = 'Surge SSH Parser';
     const test = (line) => {
@@ -1361,6 +1430,7 @@ function isIP(ip) {
 }
 
 export default [
+    URI_PROXY(),
     URI_SS(),
     URI_SSR(),
     URI_VMess(),
@@ -1371,6 +1441,7 @@ export default [
     URI_Hysteria2(),
     URI_Trojan(),
     Clash_All(),
+    Surge_Direct(),
     Surge_SSH(),
     Surge_SS(),
     Surge_VMess(),

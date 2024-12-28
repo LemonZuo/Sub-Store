@@ -37,7 +37,9 @@ let resourceUrl = typeof $resourceUrl !== 'undefined' ? $resourceUrl : '';
     if (resourceType === RESOURCE_TYPE.PROXY) {
         try {
             let proxies = ProxyUtils.parse(resource);
-            result = ProxyUtils.produce(proxies, 'Loon');
+            result = ProxyUtils.produce(proxies, 'Loon', undefined, {
+                'include-unsupported-proxy': arg?.includeUnsupportedProxy,
+            });
         } catch (e) {
             console.log('解析器: 使用 resource 出现错误');
             console.log(e.message ?? e);
@@ -45,9 +47,20 @@ let resourceUrl = typeof $resourceUrl !== 'undefined' ? $resourceUrl : '';
         if ((!result || /^\s*$/.test(result)) && resourceUrl) {
             console.log(`解析器: 尝试从 ${resourceUrl} 获取订阅`);
             try {
-                let raw = await download(resourceUrl, arg?.ua, arg?.timeout);
+                let raw = await download(
+                    resourceUrl,
+                    arg?.ua,
+                    arg?.timeout,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    true,
+                );
                 let proxies = ProxyUtils.parse(raw);
-                result = ProxyUtils.produce(proxies, 'Loon');
+                result = ProxyUtils.produce(proxies, 'Loon', undefined, {
+                    'include-unsupported-proxy': arg?.includeUnsupportedProxy,
+                });
             } catch (e) {
                 console.log(e.message ?? e);
             }

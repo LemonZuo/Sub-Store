@@ -8,6 +8,8 @@ export default function ShadowRocket_Producer() {
                 if (opts['include-unsupported-proxy']) return true;
                 if (proxy.type === 'snell' && String(proxy.version) === '4') {
                     return false;
+                } else if (['mieru'].includes(proxy.type)) {
+                    return false;
                 }
                 return true;
             })
@@ -193,6 +195,7 @@ export default function ShadowRocket_Producer() {
                     proxy[`${proxy.network}-opts`]
                 ) {
                     delete proxy[`${proxy.network}-opts`]['_grpc-type'];
+                    delete proxy[`${proxy.network}-opts`]['_grpc-authority'];
                 }
                 return proxy;
             });

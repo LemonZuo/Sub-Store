@@ -8,6 +8,8 @@ export default function ClashMeta_Producer() {
                 if (opts['include-unsupported-proxy']) return true;
                 if (proxy.type === 'snell' && String(proxy.version) === '4') {
                     return false;
+                } else if (['juicity'].includes(proxy.type)) {
+                    return false;
                 }
                 return true;
             })
@@ -190,6 +192,7 @@ export default function ClashMeta_Producer() {
                     proxy[`${proxy.network}-opts`]
                 ) {
                     delete proxy[`${proxy.network}-opts`]['_grpc-type'];
+                    delete proxy[`${proxy.network}-opts`]['_grpc-authority'];
                 }
                 return proxy;
             });

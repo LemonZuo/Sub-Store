@@ -29,9 +29,13 @@ export default function URI_Producer() {
         switch (proxy.type) {
             case 'ss':
                 const userinfo = `${proxy.cipher}:${proxy.password}`;
-                result = `ss://${Base64.encode(userinfo)}@${proxy.server}:${
-                    proxy.port
-                }${proxy.plugin ? '/' : ''}`;
+                result = `ss://${
+                    proxy.cipher?.startsWith('2022-blake3-')
+                        ? `${encodeURIComponent(
+                              proxy.cipher,
+                          )}:${encodeURIComponent(proxy.password)}`
+                        : Base64.encode(userinfo)
+                }@${proxy.server}:${proxy.port}${proxy.plugin ? '/' : ''}`;
                 if (proxy.plugin) {
                     result += '?plugin=';
                     const opts = proxy['plugin-opts'];
@@ -102,7 +106,7 @@ export default function URI_Producer() {
                     port: proxy.port,
                     id: proxy.uuid,
                     type,
-                    aid: 0,
+                    aid: proxy.alterId || 0,
                     net,
                     tls: proxy.tls ? 'tls' : '',
                 };
@@ -134,6 +138,8 @@ export default function URI_Producer() {
                         result.type =
                             proxy[`${proxy.network}-opts`]?.['_grpc-type'] ||
                             'gun';
+                        result.host =
+                            proxy[`${proxy.network}-opts`]?.['_grpc-authority'];
                     }
                 }
                 result = 'vmess://' + Base64.encode(JSON.stringify(result));
@@ -196,6 +202,13 @@ export default function URI_Producer() {
                     vlessTransport += `&mode=${encodeURIComponent(
                         proxy[`${proxy.network}-opts`]?.['_grpc-type'] || 'gun',
                     )}`;
+                    const authority =
+                        proxy[`${proxy.network}-opts`]?.['_grpc-authority'];
+                    if (authority) {
+                        vlessTransport += `&authority=${encodeURIComponent(
+                            authority,
+                        )}`;
+                    }
                 }
 
                 let vlessTransportServiceName =
@@ -261,9 +274,16 @@ export default function URI_Producer() {
                             proxy[`${proxy.network}-opts`]?.[
                                 `${proxy.network}-service-name`
                             ];
+                        let trojanTransportAuthority =
+                            proxy[`${proxy.network}-opts`]?.['_grpc-authority'];
                         if (trojanTransportServiceName) {
                             trojanTransport += `&serviceName=${encodeURIComponent(
                                 trojanTransportServiceName,
+                            )}`;
+                        }
+                        if (trojanTransportAuthority) {
+                            trojanTransport += `&authority=${encodeURIComponent(
+                                trojanTransportAuthority,
                             )}`;
                         }
                         trojanTransport += `&mode=${encodeURIComponent(
@@ -290,11 +310,27 @@ export default function URI_Producer() {
                         )}`;
                     }
                 }
+                let trojanFp = '';
+                if (proxy['client-fingerprint']) {
+                    trojanFp = `&fp=${encodeURIComponent(
+                        proxy['client-fingerprint'],
+                    )}`;
+                }
+                let trojanAlpn = '';
+                if (proxy.alpn) {
+                    trojanAlpn = `&alpn=${encodeURIComponent(
+                        Array.isArray(proxy.alpn)
+                            ? proxy.alpn
+                            : proxy.alpn.join(','),
+                    )}`;
+                }
                 result = `trojan://${proxy.password}@${proxy.server}:${
                     proxy.port
                 }?sni=${encodeURIComponent(proxy.sni || proxy.server)}${
                     proxy['skip-cert-verify'] ? '&allowInsecure=1' : ''
-                }${trojanTransport}#${encodeURIComponent(proxy.name)}`;
+                }${trojanTransport}${trojanAlpn}${trojanFp}#${encodeURIComponent(
+                    proxy.name,
+                )}`;
                 break;
             case 'hysteria2':
                 let hysteria2params = [];

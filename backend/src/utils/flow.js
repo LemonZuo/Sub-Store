@@ -18,7 +18,9 @@ export function getFlowField(headers) {
         }
     }
 
-    return `${sub || ''}${webPage ? `;app_url=${webPage}` : ''}`;
+    return `${sub || ''}${
+        webPage ? `; app_url=${encodeURIComponent(webPage)}` : ''
+    }`;
 }
 export async function getFlowHeaders(
     rawUrl,
@@ -164,6 +166,9 @@ export async function getFlowHeaders(
                 });
                 flowInfo = getFlowField(headers);
             }
+        }
+        if (flowInfo) {
+            flowInfo = flowInfo.trim();
         }
         if (flowInfo) {
             headersResourceCache.set(id, flowInfo);
