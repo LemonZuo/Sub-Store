@@ -512,7 +512,12 @@ async function produceArtifact({
         const processed =
             Array.isArray(file.process) && file.process.length > 0
                 ? await ProxyUtils.process(
-                      { $files: files, $content: filesContent, $options },
+                      {
+                          $files: files,
+                          $content: filesContent,
+                          $options,
+                          $file: file,
+                      },
                       file.process,
                   )
                 : { $content: filesContent, $files: files, $options };
@@ -619,6 +624,15 @@ async function syncArtifacts() {
 
         const resp = await syncToGist(files);
         const body = JSON.parse(resp.body);
+
+        delete body.history;
+        delete body.forks;
+        delete body.owner;
+        Object.values(body.files).forEach((file) => {
+            delete file.content;
+        });
+        $.info('上传配置响应:');
+        $.info(JSON.stringify(body, null, 2));
 
         for (const artifact of allArtifacts) {
             if (artifact.sync) {
@@ -738,6 +752,16 @@ async function syncArtifact(req, res) {
         });
         artifact.updated = new Date().getTime();
         const body = JSON.parse(resp.body);
+
+        delete body.history;
+        delete body.forks;
+        delete body.owner;
+        Object.values(body.files).forEach((file) => {
+            delete file.content;
+        });
+        $.info('上传配置响应:');
+        $.info(JSON.stringify(body, null, 2));
+
         let files = body.files;
         let isGitLab;
         if (Array.isArray(files)) {
