@@ -1,6 +1,6 @@
 import { isPresent } from '@/core/proxy-utils/producers/utils';
 
-export default function ShadowRocket_Producer() {
+export default function Shadowrocket_Producer() {
     const type = 'ALL';
     const produce = (proxies, type, opts = {}) => {
         const list = proxies
@@ -32,9 +32,10 @@ export default function ShadowRocket_Producer() {
                         isPresent(proxy, 'cipher') &&
                         ![
                             'auto',
+                            'none',
+                            'zero',
                             'aes-128-gcm',
                             'chacha20-poly1305',
-                            'none',
                         ].includes(proxy.cipher)
                     ) {
                         proxy.cipher = 'auto';
@@ -102,6 +103,8 @@ export default function ShadowRocket_Producer() {
                     proxy['preshared-key'] =
                         proxy['preshared-key'] ?? proxy['pre-shared-key'];
                     proxy['pre-shared-key'] = proxy['preshared-key'];
+                } else if (proxy.type === 'snell' && proxy.version < 3) {
+                    delete proxy.udp;
                 } else if (proxy.type === 'vless') {
                     if (isPresent(proxy, 'sni')) {
                         proxy.servername = proxy.sni;

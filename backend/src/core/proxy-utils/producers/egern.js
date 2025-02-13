@@ -14,6 +14,7 @@ export default function Egern_Producer() {
                         'hysteria2',
                         'vless',
                         'vmess',
+                        'tuic',
                     ].includes(proxy.type) ||
                     (proxy.type === 'ss' &&
                         ((proxy.plugin === 'obfs' &&
@@ -47,23 +48,12 @@ export default function Egern_Producer() {
                                 'salsa20',
                                 'chacha20',
                                 'chacha20-ietf',
-                                ...(opts['include-unsupported-proxy']
-                                    ? [
-                                          '2022-blake3-aes-128-gcm',
-                                          '2022-blake3-aes-256-gcm',
-                                      ]
-                                    : []),
+                                '2022-blake3-aes-128-gcm',
+                                '2022-blake3-aes-256-gcm',
                             ].includes(proxy.cipher))) ||
                     (proxy.type === 'vmess' &&
-                        (![
-                            'auto',
-                            'aes-128-gcm',
-                            'chacha20-poly1305',
-                            'none',
-                            'zero',
-                        ].includes(proxy.cipher) ||
-                            (!['http', 'ws', 'tcp'].includes(proxy.network) &&
-                                proxy.network))) ||
+                        !['http', 'ws', 'tcp'].includes(proxy.network) &&
+                        proxy.network) ||
                     (proxy.type === 'trojan' &&
                         !['http', 'ws', 'tcp'].includes(proxy.network) &&
                         proxy.network) ||
@@ -71,7 +61,10 @@ export default function Egern_Producer() {
                         (typeof proxy.flow !== 'undefined' ||
                             proxy['reality-opts'] ||
                             (!['http', 'ws', 'tcp'].includes(proxy.network) &&
-                                proxy.network)))
+                                proxy.network))) ||
+                    (proxy.type === 'tuic' &&
+                        proxy.token &&
+                        proxy.token.length !== 0)
                 ) {
                     return false;
                 }
@@ -152,6 +145,23 @@ export default function Egern_Producer() {
                         proxy.obfs = 'salamander';
                         proxy.obfs_password = proxy['obfs-password'];
                     }
+                } else if (proxy.type === 'tuic') {
+                    proxy = {
+                        type: 'tuic',
+                        name: proxy.name,
+                        server: proxy.server,
+                        port: proxy.port,
+                        uuid: proxy.uuid,
+                        password: proxy.password,
+                        next_hop: proxy.next_hop,
+                        sni: proxy.sni,
+                        alpn: Array.isArray(proxy.alpn)
+                            ? proxy.alpn
+                            : [proxy.alpn || 'h3'],
+                        skip_tls_verify: proxy['skip-cert-verify'],
+                        port_hopping: proxy.ports,
+                        port_hopping_interval: proxy['hop-interval'],
+                    };
                 } else if (proxy.type === 'trojan') {
                     if (proxy.network === 'ws') {
                         proxy.websocket = {
@@ -174,6 +184,20 @@ export default function Egern_Producer() {
                         websocket: proxy.websocket,
                     };
                 } else if (proxy.type === 'vmess') {
+                    // Egern：传输层，支持 ws/wss/http1/http2/tls，不配置则为 tcp
+                    let security = proxy.cipher;
+                    if (
+                        security &&
+                        ![
+                            'auto',
+                            'none',
+                            'zero',
+                            'aes-128-gcm',
+                            'chacha20-poly1305',
+                        ].includes(security)
+                    ) {
+                        security = 'auto';
+                    }
                     if (proxy.network === 'ws') {
                         proxy.transport = {
                             [proxy.tls ? 'wss' : 'ws']: {
@@ -189,7 +213,7 @@ export default function Egern_Producer() {
                         };
                     } else if (proxy.network === 'http') {
                         proxy.transport = {
-                            http: {
+                            http1: {
                                 method: proxy['http-opts']?.method,
                                 path: proxy['http-opts']?.path,
                                 headers: {
@@ -202,9 +226,27 @@ export default function Egern_Producer() {
                                 skip_tls_verify: proxy['skip-cert-verify'],
                             },
                         };
-                    } else if (proxy.network === 'tcp' || !proxy.network) {
+                    } else if (proxy.network === 'h2') {
                         proxy.transport = {
-                            [proxy.tls ? 'tls' : 'tcp']: {
+                            http2: {
+                                method: proxy['h2-opts']?.method,
+                                path: proxy['h2-opts']?.path,
+                                headers: {
+                                    Host: Array.isArray(
+                                        proxy['h2-opts']?.headers?.Host,
+                                    )
+                                        ? proxy['h2-opts']?.headers?.Host[0]
+                                        : proxy['h2-opts']?.headers?.Host,
+                                },
+                                skip_tls_verify: proxy['skip-cert-verify'],
+                            },
+                        };
+                    } else if (
+                        (proxy.network === 'tcp' || !proxy.network) &&
+                        proxy.tls
+                    ) {
+                        proxy.transport = {
+                            tls: {
                                 sni: proxy.tls ? proxy.sni : undefined,
                                 skip_tls_verify: proxy.tls
                                     ? proxy['skip-cert-verify']
@@ -218,7 +260,7 @@ export default function Egern_Producer() {
                         server: proxy.server,
                         port: proxy.port,
                         user_id: proxy.uuid,
-                        security: proxy.cipher,
+                        security,
                         tfo: proxy.tfo || proxy['fast-open'],
                         legacy: proxy.legacy,
                         udp_relay:

@@ -27,6 +27,11 @@ export default function URI_Producer() {
             proxy.server = `[${proxy.server}]`;
         }
         switch (proxy.type) {
+            case 'socks5':
+                result = `socks://${encodeURIComponent(
+                    Base64.encode(`${proxy.username}:${proxy.password}`),
+                )}@${proxy.server}:${proxy.port}#${proxy.name}`;
+                break;
             case 'ss':
                 const userinfo = `${proxy.cipher}:${proxy.password}`;
                 result = `ss://${
@@ -52,6 +57,11 @@ export default function URI_Producer() {
                                 `v2ray-plugin;obfs=${opts.mode}${
                                     opts.host ? ';obfs-host' + opts.host : ''
                                 }${opts.tls ? ';tls' : ''}`,
+                            );
+                            break;
+                        case 'shadow-tls':
+                            result += encodeURIComponent(
+                                `shadow-tls;host=${opts.host};password=${opts.password};version=${opts.version}`,
                             );
                             break;
                         default:
@@ -149,6 +159,7 @@ export default function URI_Producer() {
                 const isReality = proxy['reality-opts'];
                 let sid = '';
                 let pbk = '';
+                let spx = '';
                 if (isReality) {
                     security = 'reality';
                     const publicKey = proxy['reality-opts']?.['public-key'];
@@ -158,6 +169,10 @@ export default function URI_Producer() {
                     const shortId = proxy['reality-opts']?.['short-id'];
                     if (shortId) {
                         sid = `&sid=${encodeURIComponent(shortId)}`;
+                    }
+                    const spiderX = proxy['reality-opts']?.['_spider-x'];
+                    if (spiderX) {
+                        spx = `&spx=${encodeURIComponent(spiderX)}`;
                     }
                 } else if (proxy.tls) {
                     security = 'tls';
@@ -189,8 +204,12 @@ export default function URI_Producer() {
                     flow = `&flow=${encodeURIComponent(proxy.flow)}`;
                 }
                 let extra = '';
-                if (proxy.extra) {
-                    extra = `&extra=${encodeURIComponent(proxy.extra)}`;
+                if (proxy._extra) {
+                    extra = `&extra=${encodeURIComponent(proxy._extra)}`;
+                }
+                let mode = '';
+                if (proxy._mode) {
+                    mode = `&mode=${encodeURIComponent(proxy._mode)}`;
                 }
                 let vlessType = proxy.network;
                 if (
@@ -258,7 +277,7 @@ export default function URI_Producer() {
                     proxy.port
                 }?security=${encodeURIComponent(
                     security,
-                )}${vlessTransport}${alpn}${allowInsecure}${sni}${fp}${flow}${sid}${pbk}${extra}#${encodeURIComponent(
+                )}${vlessTransport}${alpn}${allowInsecure}${sni}${fp}${flow}${sid}${spx}${pbk}${mode}${extra}#${encodeURIComponent(
                     proxy.name,
                 )}`;
                 break;
@@ -328,11 +347,41 @@ export default function URI_Producer() {
                             : proxy.alpn.join(','),
                     )}`;
                 }
+                const trojanIsReality = proxy['reality-opts'];
+                let trojanSid = '';
+                let trojanPbk = '';
+                let trojanSpx = '';
+                let trojanSecurity = '';
+                let trojanMode = '';
+                let trojanExtra = '';
+                if (trojanIsReality) {
+                    trojanSecurity = `&security=reality`;
+                    const publicKey = proxy['reality-opts']?.['public-key'];
+                    if (publicKey) {
+                        trojanPbk = `&pbk=${encodeURIComponent(publicKey)}`;
+                    }
+                    const shortId = proxy['reality-opts']?.['short-id'];
+                    if (shortId) {
+                        trojanSid = `&sid=${encodeURIComponent(shortId)}`;
+                    }
+                    const spiderX = proxy['reality-opts']?.['_spider-x'];
+                    if (spiderX) {
+                        trojanSpx = `&spx=${encodeURIComponent(spiderX)}`;
+                    }
+                    if (proxy._extra) {
+                        trojanExtra = `&extra=${encodeURIComponent(
+                            proxy._extra,
+                        )}`;
+                    }
+                    if (proxy._mode) {
+                        trojanMode = `&mode=${encodeURIComponent(proxy._mode)}`;
+                    }
+                }
                 result = `trojan://${proxy.password}@${proxy.server}:${
                     proxy.port
                 }?sni=${encodeURIComponent(proxy.sni || proxy.server)}${
                     proxy['skip-cert-verify'] ? '&allowInsecure=1' : ''
-                }${trojanTransport}${trojanAlpn}${trojanFp}#${encodeURIComponent(
+                }${trojanTransport}${trojanAlpn}${trojanFp}${trojanSecurity}${trojanSid}${trojanPbk}${trojanSpx}${trojanMode}${trojanExtra}#${encodeURIComponent(
                     proxy.name,
                 )}`;
                 break;
