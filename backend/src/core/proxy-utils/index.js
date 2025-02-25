@@ -23,6 +23,7 @@ import { produceArtifact } from '@/restful/sync';
 import { getFlag, removeFlag, getISO, MMDB } from '@/utils/geo';
 import Gist from '@/utils/gist';
 import { isPresent } from './producers/utils';
+import { doh } from '@/utils/dns';
 
 function preprocess(raw) {
     for (const processor of PROXY_PREPROCESSORS) {
@@ -81,9 +82,9 @@ function parse(raw) {
         if (['vless', 'vmess'].includes(proxy.type)) {
             const isProxyUUIDValid = isValidUUID(proxy.uuid);
             if (!isProxyUUIDValid) {
-                $.error(`UUID is invalid: ${proxy.name} ${proxy.uuid}`);
+                $.error(`UUID may be invalid: ${proxy.name} ${proxy.uuid}`);
             }
-            return isProxyUUIDValid;
+            // return isProxyUUIDValid;
         }
         return true;
     });
@@ -235,8 +236,8 @@ function produce(proxies, targetPlatform, type, opts = {}) {
         if (['vless', 'vmess'].includes(proxy.type)) {
             const isProxyUUIDValid = isValidUUID(proxy.uuid);
             if (!isProxyUUIDValid)
-                $.error(`UUID is invalid: ${proxy.name} ${proxy.uuid}`);
-            return isProxyUUIDValid;
+                $.error(`UUID may be invalid: ${proxy.name} ${proxy.uuid}`);
+            // return isProxyUUIDValid;
         }
 
         return true;
@@ -326,6 +327,8 @@ export const ProxyUtils = {
     MMDB,
     Gist,
     download,
+    isValidUUID,
+    doh,
 };
 
 function tryParse(parser, line) {
@@ -423,9 +426,14 @@ function lastParse(proxy) {
         }
     }
     if (
-        ['trojan', 'tuic', 'hysteria', 'hysteria2', 'juicity'].includes(
-            proxy.type,
-        )
+        [
+            'trojan',
+            'tuic',
+            'hysteria',
+            'hysteria2',
+            'juicity',
+            'anytls',
+        ].includes(proxy.type)
     ) {
         proxy.tls = true;
     }

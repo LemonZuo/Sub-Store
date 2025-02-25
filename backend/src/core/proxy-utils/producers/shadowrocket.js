@@ -8,7 +8,7 @@ export default function Shadowrocket_Producer() {
                 if (opts['include-unsupported-proxy']) return true;
                 if (proxy.type === 'snell' && String(proxy.version) === '4') {
                     return false;
-                } else if (['mieru'].includes(proxy.type)) {
+                } else if (['mieru', 'anytls'].includes(proxy.type)) {
                     return false;
                 }
                 return true;
@@ -110,6 +110,21 @@ export default function Shadowrocket_Producer() {
                         proxy.servername = proxy.sni;
                         delete proxy.sni;
                     }
+                } else if (proxy.type === 'ss') {
+                    if (
+                        isPresent(proxy, 'shadow-tls-password') &&
+                        !isPresent(proxy, 'plugin')
+                    ) {
+                        proxy.plugin = 'shadow-tls';
+                        proxy['plugin-opts'] = {
+                            host: proxy['shadow-tls-sni'],
+                            password: proxy['shadow-tls-password'],
+                            version: proxy['shadow-tls-version'],
+                        };
+                        delete proxy['shadow-tls-password'];
+                        delete proxy['shadow-tls-sni'];
+                        delete proxy['shadow-tls-version'];
+                    }
                 }
 
                 if (
@@ -163,6 +178,7 @@ export default function Shadowrocket_Producer() {
                         'hysteria',
                         'hysteria2',
                         'juicity',
+                        'anytls',
                     ].includes(proxy.type)
                 ) {
                     delete proxy.tls;

@@ -190,6 +190,8 @@ function URI_SS() {
 
         // handle obfs
         const pluginMatch = content.match(/[?&]plugin=([^&]+)/);
+        const shadowTlsMatch = content.match(/[?&]shadow-tls=([^&]+)/);
+
         if (pluginMatch) {
             const pluginInfo = (
                 'plugin=' + decodeURIComponent(pluginMatch[1])
@@ -231,6 +233,25 @@ function URI_SS() {
                     throw new Error(
                         `Unsupported plugin option: ${params.plugin}`,
                     );
+            }
+        }
+        // Shadowrocket
+        if (shadowTlsMatch) {
+            const params = JSON.parse(Base64.decode(shadowTlsMatch[1]));
+            const version = getIfNotBlank(params['version']);
+            const address = getIfNotBlank(params['address']);
+            const port = getIfNotBlank(params['port']);
+            proxy.plugin = 'shadow-tls';
+            proxy['plugin-opts'] = {
+                host: getIfNotBlank(params['host']),
+                password: getIfNotBlank(params['password']),
+                version: version ? parseInt(version, 10) : undefined,
+            };
+            if (address) {
+                proxy.server = address;
+            }
+            if (port) {
+                proxy.port = parseInt(port, 10);
             }
         }
         if (/(&|\?)uot=(1|true)/i.test(query)) {
@@ -865,12 +886,14 @@ function URI_TUIC() {
 
         for (const addon of addons.split('&')) {
             let [key, value] = addon.split('=');
-            key = key.replace(/_/, '-');
+            key = key.replace(/_/g, '-');
             value = decodeURIComponent(value);
             if (['alpn'].includes(key)) {
                 proxy[key] = value ? value.split(',') : undefined;
             } else if (['allow-insecure'].includes(key)) {
                 proxy['skip-cert-verify'] = /(TRUE)|1/i.test(value);
+            } else if (['fast-open'].includes(key)) {
+                proxy.tfo = true;
             } else if (['disable-sni', 'reduce-rtt'].includes(key)) {
                 proxy[key] = /(TRUE)|1/i.test(value);
             } else {
@@ -1008,6 +1031,7 @@ function Clash_All() {
         const proxy = JSON.parse(line);
         if (
             ![
+                'anytls',
                 'mieru',
                 'juicity',
                 'ss',
