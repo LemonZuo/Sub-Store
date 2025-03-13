@@ -9,6 +9,7 @@ import {
     InternalServerError,
 } from '@/restful/errors';
 import { produceArtifact } from '@/restful/sync';
+import { formatDateTime } from '@/utils';
 
 export default function register($app) {
     if (!$.read(FILES_KEY)) $.write([], FILES_KEY);
@@ -210,16 +211,9 @@ function getWholeFile(req, res) {
                 .set(
                     'content-disposition',
                     `attachment; filename="${encodeURIComponent(
-                        `sub-store_file_${name}_${new Date()
-                            .toLocaleString('zh-CN', {
-                                year: 'numeric',
-                                day: 'numeric',
-                                month: 'numeric',
-                                hour: 'numeric',
-                                minute: 'numeric',
-                                second: 'numeric',
-                            })
-                            .replace(/\D/g, '')}.json`,
+                        `sub-store_file_${name}_${formatDateTime(
+                            new Date(),
+                        )}.json`,
                     )}"`,
                 )
                 .send(JSON.stringify(file));

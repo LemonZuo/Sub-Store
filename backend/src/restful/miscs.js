@@ -14,6 +14,7 @@ import { InternalServerError, RequestInvalidError } from '@/restful/errors';
 import Gist from '@/utils/gist';
 import migrate from '@/utils/migration';
 import env from '@/utils/env';
+import { formatDateTime } from '@/utils';
 
 export default function register($app) {
     // utils
@@ -28,16 +29,7 @@ export default function register($app) {
                 .set(
                     'content-disposition',
                     `attachment; filename="${encodeURIComponent(
-                        `sub-store_data_${new Date()
-                            .toLocaleString('zh-CN', {
-                                year: 'numeric',
-                                day: 'numeric',
-                                month: 'numeric',
-                                hour: 'numeric',
-                                minute: 'numeric',
-                                second: 'numeric',
-                            })
-                            .replace(/\D/g, '')}.json`,
+                        `sub-store_data_${formatDateTime(new Date())}.json`,
                     )}"`,
                 )
                 .send(
