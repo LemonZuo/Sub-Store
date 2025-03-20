@@ -29,6 +29,72 @@ export default function serve() {
         host = eval('process.env.SUB_STORE_BACKEND_API_HOST') || '::';
     }
     const $app = express({ substore: $, port, host });
+    if ($.env.isNode) {
+        const be_merge = eval('process.env.SUB_STORE_BACKEND_MERGE');
+        const be_prefix = eval('process.env.SUB_STORE_BACKEND_PREFIX');
+        const fe_be_path = eval('process.env.SUB_STORE_FRONTEND_BACKEND_PATH');
+        const fe_path = eval('process.env.SUB_STORE_FRONTEND_PATH');
+        if (be_prefix || be_merge) {
+            if(!fe_be_path.startsWith('/')){
+                throw new Error(
+                    'SUB_STORE_FRONTEND_BACKEND_PATH should start with /',
+                );
+            }
+            if (be_merge) {
+                $.info(`[BACKEND] MERGE mode is [ON].`);
+                $.info(`[BACKEND && FRONTEND] ${host}:${port}`);
+            }
+            $.info(`[BACKEND PREFIX] ${host}:${port}${fe_be_path}`);
+            $app.use((req, res, next) => {
+                if (req.path.startsWith(fe_be_path)) {
+                    req.url = req.url.replace(fe_be_path, '') || '/';
+                    if(be_merge && req.url.startsWith('/api/')){
+                        req.query['share'] = 'true';
+                    }
+                    next();
+                    return;
+                }
+                const pathname = req._parsedUrl.pathname || '/';
+                if(be_merge && req.path.startsWith('/share/') && req.query.token){
+                    if (req.method.toLowerCase() !== 'get'){
+                        res.status(405).send('Method not allowed');
+                        return;
+                    }
+                    const tokens = $.read(TOKENS_KEY) || [];
+                    const token = tokens.find(
+                        (t) =>
+                            t.token === req.query.token &&
+                            `/share/${t.type}/${t.name}` === pathname &&
+                            (t.exp == null || t.exp > Date.now()),
+                    );
+                    if (token){
+                        next();
+                        return;
+                    }
+                }
+                if (be_merge && fe_path && req.path.indexOf('/',1) == -1) {
+                    if (req.path.indexOf('.') == -1){
+                        req.url = "/index.html"
+                    }
+                    const express_ = eval(`require("express")`);
+                    const mime_ = eval(`require("mime-types")`);
+                    const path_ = eval(`require("path")`);
+                    const staticFileMiddleware = express_.static(fe_path, {
+                        setHeaders: (res, path) => {
+                            const type = mime_.contentType(path_.extname(path));
+                            if (type) {
+                                res.set('Content-Type', type);
+                            }
+                        }
+                    });
+                    staticFileMiddleware(req, res, next);
+                    return;
+                }
+                res.status(403).end('Forbbiden');
+                return;
+            });
+        }
+    }
     // register routes
     registerCollectionRoutes($app);
     registerSubscriptionRoutes($app);
@@ -175,7 +241,8 @@ export default function serve() {
         const fe_abs_path = path.resolve(
             fe_path || path.join(__dirname, 'frontend'),
         );
-        if (fe_path) {
+        const be_merge = eval('process.env.SUB_STORE_BACKEND_MERGE');
+        if (fe_path && !be_merge) {
             try {
                 fs.accessSync(path.join(fe_abs_path, 'index.html'));
             } catch (e) {
@@ -200,6 +267,9 @@ export default function serve() {
             let be_download_rewrite = '';
             let be_api_rewrite = '';
             let be_share_rewrite = `${be_share}:type/:name`;
+            let prefix = eval('process.env.SUB_STORE_BACKEND_PREFIX')
+                ? fe_be_path
+                : '';
             if (fe_be_path) {
                 if (!fe_be_path.startsWith('/')) {
                     throw new Error(
@@ -216,7 +286,7 @@ export default function serve() {
                 app.use(
                     be_share_rewrite,
                     createProxyMiddleware({
-                        target: `http://127.0.0.1:${port}`,
+                        target: `http://127.0.0.1:${port}${prefix}`,
                         changeOrigin: true,
                         pathRewrite: async (path, req) => {
                             if (req.method.toLowerCase() !== 'get')
@@ -237,7 +307,7 @@ export default function serve() {
                 app.use(
                     be_api_rewrite,
                     createProxyMiddleware({
-                        target: `http://127.0.0.1:${port}${be_api}`,
+                        target: `http://127.0.0.1:${port}${prefix}${be_api}`,
                         pathRewrite: async (path) => {
                             return path.includes('?')
                                 ? `${path}&share=true`
@@ -248,7 +318,7 @@ export default function serve() {
                 app.use(
                     be_download_rewrite,
                     createProxyMiddleware({
-                        target: `http://127.0.0.1:${port}${be_download}`,
+                        target: `http://127.0.0.1:${port}${prefix}${be_download}`,
                         changeOrigin: true,
                     }),
                 );
@@ -269,10 +339,10 @@ export default function serve() {
                 $.info(`[FRONTEND] ${fe_address}:${fe_port}`);
                 if (fe_be_path) {
                     $.info(
-                        `[FRONTEND -> BACKEND] ${fe_address}:${fe_port}${be_api_rewrite} -> http://127.0.0.1:${port}${be_api}`,
+                        `[FRONTEND -> BACKEND] ${fe_address}:${fe_port}${be_api_rewrite} -> ${host}:${port}${prefix}${be_api}`,
                     );
                     $.info(
-                        `[FRONTEND -> BACKEND] ${fe_address}:${fe_port}${be_download_rewrite} -> http://127.0.0.1:${port}${be_download}`,
+                        `[FRONTEND -> BACKEND] ${fe_address}:${fe_port}${be_download_rewrite} -> ${host}:${port}${prefix}${be_download}`,
                     );
                     $.info(
                         `[SHARE BACKEND] ${fe_address}:${fe_port}${be_share_rewrite}`,

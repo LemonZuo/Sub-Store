@@ -18,6 +18,10 @@ export class OpenAPI {
         this.http = HTTP();
         this.env = ENV();
 
+        if (isNode) {
+            const dotenv = eval(`require("dotenv")`);
+            dotenv.config();
+        }
         this.node = (() => {
             if (isNode) {
                 const fs = eval("require('fs')");
@@ -360,7 +364,12 @@ export function HTTP(defaultOptions = { baseURL: '' }) {
                 }
                 if (isNode) {
                     const undici = eval("require('undici')");
-                    const { ProxyAgent, EnvHttpProxyAgent, request } = undici;
+                    const {
+                        ProxyAgent,
+                        EnvHttpProxyAgent,
+                        request,
+                        interceptors,
+                    } = undici;
                     const agentOpts = {
                         connect: {
                             rejectUnauthorized:
@@ -387,12 +396,18 @@ export function HTTP(defaultOptions = { baseURL: '' }) {
                         const response = await request(opts.url, {
                             ...opts,
                             method: method.toUpperCase(),
-                            dispatcher: opts.proxy
+                            dispatcher: (opts.proxy
                                 ? new ProxyAgent({
                                       ...agentOpts,
                                       uri: opts.proxy,
                                   })
-                                : new EnvHttpProxyAgent(agentOpts),
+                                : new EnvHttpProxyAgent(agentOpts)
+                            ).compose(
+                                interceptors.redirect({
+                                    maxRedirections: 3,
+                                    throwOnMaxRedirects: true,
+                                }),
+                            ),
                         });
                         resolve({
                             statusCode: response.statusCode,
