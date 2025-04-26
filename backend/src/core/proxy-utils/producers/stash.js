@@ -1,4 +1,5 @@
 import { isPresent } from '@/core/proxy-utils/producers/utils';
+import $ from '@/core/app';
 
 export default function Stash_Producer() {
     const type = 'ALL';
@@ -39,12 +40,8 @@ export default function Stash_Producer() {
                             'xchacha20',
                             'chacha20-ietf-poly1305',
                             'xchacha20-ietf-poly1305',
-                            ...(opts['include-unsupported-proxy']
-                                ? [
-                                      '2022-blake3-aes-128-gcm',
-                                      '2022-blake3-aes-256-gcm',
-                                  ]
-                                : []),
+                            '2022-blake3-aes-128-gcm',
+                            '2022-blake3-aes-256-gcm',
                         ].includes(proxy.cipher)) ||
                     (proxy.type === 'snell' && String(proxy.version) === '4') ||
                     (opts['include-unsupported-proxy']
@@ -53,6 +50,11 @@ export default function Stash_Producer() {
                           !['xtls-rprx-vision'].includes(proxy.flow)
                         : proxy.type === 'vless' && proxy['reality-opts'])
                 ) {
+                    return false;
+                } else if (proxy['underlying-proxy'] || proxy['dialer-proxy']) {
+                    $.error(
+                        `Stash 暂不支持前置代理字段. 已过滤节点 ${proxy.name}. 请使用 代理的转发链 https://stash.wiki/proxy-protocols/proxy-groups#relay`,
+                    );
                     return false;
                 }
                 return true;
@@ -260,11 +262,6 @@ export default function Stash_Producer() {
                     proxy['server-cert-fingerprint'] = proxy['tls-fingerprint'];
                 }
                 delete proxy['tls-fingerprint'];
-
-                if (proxy['underlying-proxy']) {
-                    proxy['dialer-proxy'] = proxy['underlying-proxy'];
-                }
-                delete proxy['underlying-proxy'];
 
                 if (isPresent(proxy, 'tls') && typeof proxy.tls !== 'boolean') {
                     delete proxy.tls;

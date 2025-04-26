@@ -128,8 +128,8 @@ function URI_SS() {
         // parse url
         let content = line.split('ss://')[1];
 
+        let name = line.split('#')[1];
         const proxy = {
-            name: decodeURIComponent(line.split('#')[1]),
             type: 'ss',
         };
         content = content.split('#')[0]; // strip proxy name
@@ -260,6 +260,10 @@ function URI_SS() {
         if (/(&|\?)tfo=(1|true)/i.test(query)) {
             proxy.tfo = true;
         }
+        if (name != null) {
+            name = decodeURIComponent(name);
+        }
+        proxy.name = name ?? `SS ${proxy.server}:${proxy.port}`;
         return proxy;
     };
     return { name, test, parse };
@@ -491,6 +495,11 @@ function URI_VMess() {
                     // eslint-disable-next-line no-empty
                 } catch (e) {}
                 let transportPath = params.path;
+
+                // 补上默认 path
+                if (['ws'].includes(proxy.network)) {
+                    transportPath = transportPath || '/';
+                }
 
                 if (proxy.network === 'http') {
                     if (transportHost) {
@@ -739,6 +748,8 @@ function URI_AnyTLS() {
                 proxy[key] = value ? value.split(',') : undefined;
             } else if (['insecure'].includes(key)) {
                 proxy['skip-cert-verify'] = /(TRUE)|1/i.test(value);
+            } else if (['udp'].includes(key)) {
+                proxy[key] = /(TRUE)|1/i.test(value);
             } else {
                 proxy[key] = value;
             }
@@ -957,6 +968,9 @@ function URI_TUIC() {
                 proxy.tfo = true;
             } else if (['disable-sni', 'reduce-rtt'].includes(key)) {
                 proxy[key] = /(TRUE)|1/i.test(value);
+            } else if (key === 'congestion-control') {
+                proxy['congestion-controller'] = value;
+                delete proxy[key];
             } else {
                 proxy[key] = value;
             }

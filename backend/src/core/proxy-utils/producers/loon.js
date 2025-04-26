@@ -21,7 +21,7 @@ export default function Loon_Producer() {
             case 'trojan':
                 return trojan(proxy);
             case 'vmess':
-                return vmess(proxy);
+                return vmess(proxy, opts['include-unsupported-proxy']);
             case 'vless':
                 return vless(proxy, opts['include-unsupported-proxy']);
             case 'http':
@@ -133,6 +133,13 @@ function shadowsocks(proxy) {
     // tfo
     result.appendIfPresent(`,fast-open=${proxy.tfo}`, 'tfo');
 
+    // block-quic
+    if (proxy['block-quic'] === 'on') {
+        result.append(',block-quic=true');
+    } else if (proxy['block-quic'] === 'off') {
+        result.append(',block-quic=false');
+    }
+
     // udp
     if (proxy.udp) {
         result.append(`,udp=true`);
@@ -144,7 +151,7 @@ function shadowsocks(proxy) {
     return result.toString();
 }
 
-function shadowsocksr(proxy, includeUnsupportedProxy) {
+function shadowsocksr(proxy) {
     const result = new Result(proxy);
     result.append(
         `${proxy.name}=shadowsocksr,${proxy.server},${proxy.port},${proxy.cipher},"${proxy.password}"`,
@@ -203,6 +210,13 @@ function shadowsocksr(proxy, includeUnsupportedProxy) {
     // tfo
     result.appendIfPresent(`,fast-open=${proxy.tfo}`, 'tfo');
 
+    // block-quic
+    if (proxy['block-quic'] === 'on') {
+        result.append(',block-quic=true');
+    } else if (proxy['block-quic'] === 'off') {
+        result.append(',block-quic=false');
+    }
+
     // udp
     if (proxy.udp) {
         result.append(`,udp=true`);
@@ -259,6 +273,13 @@ function trojan(proxy) {
     // tfo
     result.appendIfPresent(`,fast-open=${proxy.tfo}`, 'tfo');
 
+    // block-quic
+    if (proxy['block-quic'] === 'on') {
+        result.append(',block-quic=true');
+    } else if (proxy['block-quic'] === 'off') {
+        result.append(',block-quic=false');
+    }
+
     // udp
     if (proxy.udp) {
         result.append(`,udp=true`);
@@ -270,6 +291,8 @@ function trojan(proxy) {
 }
 
 function vmess(proxy) {
+    const isReality = !!proxy['reality-opts'];
+
     const result = new Result(proxy);
     result.append(
         `${proxy.name}=vmess,${proxy.server},${proxy.port},${proxy.cipher},"${proxy.uuid}"`,
@@ -317,16 +340,28 @@ function vmess(proxy) {
         'skip-cert-verify',
     );
 
-    // sni
-    result.appendIfPresent(`,tls-name=${proxy.sni}`, 'sni');
-    result.appendIfPresent(
-        `,tls-cert-sha256=${proxy['tls-fingerprint']}`,
-        'tls-fingerprint',
-    );
-    result.appendIfPresent(
-        `,tls-pubkey-sha256=${proxy['tls-pubkey-sha256']}`,
-        'tls-pubkey-sha256',
-    );
+    if (isReality) {
+        result.appendIfPresent(`,sni=${proxy.sni}`, 'sni');
+        result.appendIfPresent(
+            `,public-key="${proxy['reality-opts']['public-key']}"`,
+            'reality-opts.public-key',
+        );
+        result.appendIfPresent(
+            `,short-id=${proxy['reality-opts']['short-id']}`,
+            'reality-opts.short-id',
+        );
+    } else {
+        // sni
+        result.appendIfPresent(`,tls-name=${proxy.sni}`, 'sni');
+        result.appendIfPresent(
+            `,tls-cert-sha256=${proxy['tls-fingerprint']}`,
+            'tls-fingerprint',
+        );
+        result.appendIfPresent(
+            `,tls-pubkey-sha256=${proxy['tls-pubkey-sha256']}`,
+            'tls-pubkey-sha256',
+        );
+    }
 
     // AEAD
     if (isPresent(proxy, 'aead')) {
@@ -338,6 +373,13 @@ function vmess(proxy) {
     // tfo
     result.appendIfPresent(`,fast-open=${proxy.tfo}`, 'tfo');
 
+    // block-quic
+    if (proxy['block-quic'] === 'on') {
+        result.append(',block-quic=true');
+    } else if (proxy['block-quic'] === 'off') {
+        result.append(',block-quic=false');
+    }
+
     // udp
     if (proxy.udp) {
         result.append(`,udp=true`);
@@ -347,28 +389,18 @@ function vmess(proxy) {
     return result.toString();
 }
 
-function vless(proxy, includeUnsupportedProxy) {
-    if (
-        !includeUnsupportedProxy &&
-        (typeof proxy.flow !== 'undefined' || proxy['reality-opts'])
-    ) {
-        throw new Error(`VLESS XTLS/REALITY is not supported`);
-    }
-    let isReality = false;
-    if (includeUnsupportedProxy) {
-        if (
-            proxy['reality-opts'] &&
-            ['xtls-rprx-vision'].includes(proxy.flow)
-        ) {
-            isReality = true;
-        } else if (proxy['reality-opts']) {
-            throw new Error(
-                `VLESS REALITY with flow(${proxy.flow}) is not supported`,
-            );
-        } else if (proxy.flow) {
-            throw new Error(`VLESS XTLS is not supported`);
+function vless(proxy) {
+    let isXtls = false;
+    const isReality = !!proxy['reality-opts'];
+
+    if (typeof proxy.flow !== 'undefined') {
+        if (['xtls-rprx-vision'].includes(proxy.flow)) {
+            isXtls = true;
+        } else {
+            throw new Error(`VLESS flow(${proxy.flow}) is not supported`);
         }
     }
+
     const result = new Result(proxy);
     result.append(
         `${proxy.name}=vless,${proxy.server},${proxy.port},"${proxy.uuid}"`,
@@ -416,9 +448,10 @@ function vless(proxy, includeUnsupportedProxy) {
         'skip-cert-verify',
     );
 
-    // sni
-    if (isReality) {
+    if (isXtls) {
         result.appendIfPresent(`,flow=${proxy.flow}`, 'flow');
+    }
+    if (isReality) {
         result.appendIfPresent(`,sni=${proxy.sni}`, 'sni');
         result.appendIfPresent(
             `,public-key="${proxy['reality-opts']['public-key']}"`,
@@ -429,20 +462,27 @@ function vless(proxy, includeUnsupportedProxy) {
             'reality-opts.short-id',
         );
     } else {
+        // sni
         result.appendIfPresent(`,tls-name=${proxy.sni}`, 'sni');
+        result.appendIfPresent(
+            `,tls-cert-sha256=${proxy['tls-fingerprint']}`,
+            'tls-fingerprint',
+        );
+        result.appendIfPresent(
+            `,tls-pubkey-sha256=${proxy['tls-pubkey-sha256']}`,
+            'tls-pubkey-sha256',
+        );
     }
-
-    result.appendIfPresent(
-        `,tls-cert-sha256=${proxy['tls-fingerprint']}`,
-        'tls-fingerprint',
-    );
-    result.appendIfPresent(
-        `,tls-pubkey-sha256=${proxy['tls-pubkey-sha256']}`,
-        'tls-pubkey-sha256',
-    );
 
     // tfo
     result.appendIfPresent(`,fast-open=${proxy.tfo}`, 'tfo');
+
+    // block-quic
+    if (proxy['block-quic'] === 'on') {
+        result.append(',block-quic=true');
+    } else if (proxy['block-quic'] === 'off') {
+        result.append(',block-quic=false');
+    }
 
     // udp
     if (proxy.udp) {
@@ -471,6 +511,14 @@ function http(proxy) {
 
     // tfo
     result.appendIfPresent(`,tfo=${proxy.tfo}`, 'tfo');
+
+    // block-quic
+    if (proxy['block-quic'] === 'on') {
+        result.append(',block-quic=true');
+    } else if (proxy['block-quic'] === 'off') {
+        result.append(',block-quic=false');
+    }
+
     const ip_version = ipVersions[proxy['ip-version']] || proxy['ip-version'];
     result.appendIfPresent(`,ip-mode=${ip_version}`, 'ip-version');
 
@@ -496,6 +544,13 @@ function socks5(proxy) {
 
     // tfo
     result.appendIfPresent(`,tfo=${proxy.tfo}`, 'tfo');
+
+    // block-quic
+    if (proxy['block-quic'] === 'on') {
+        result.append(',block-quic=true');
+    } else if (proxy['block-quic'] === 'off') {
+        result.append(',block-quic=false');
+    }
 
     // udp
     if (proxy.udp) {
@@ -571,6 +626,13 @@ function wireguard(proxy) {
     const ip_version = ipVersions[proxy['ip-version']] || proxy['ip-version'];
     result.appendIfPresent(`,ip-mode=${ip_version}`, 'ip-version');
 
+    // block-quic
+    if (proxy['block-quic'] === 'on') {
+        result.append(',block-quic=true');
+    } else if (proxy['block-quic'] === 'off') {
+        result.append(',block-quic=false');
+    }
+
     return result.toString();
 }
 
@@ -604,6 +666,13 @@ function hysteria2(proxy) {
 
     // tfo
     result.appendIfPresent(`,fast-open=${proxy.tfo}`, 'tfo');
+
+    // block-quic
+    if (proxy['block-quic'] === 'on') {
+        result.append(',block-quic=true');
+    } else if (proxy['block-quic'] === 'off') {
+        result.append(',block-quic=false');
+    }
 
     // udp
     if (proxy.udp) {
