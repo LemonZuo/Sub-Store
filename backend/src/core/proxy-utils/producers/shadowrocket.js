@@ -9,12 +9,7 @@ export default function Shadowrocket_Producer() {
                 if (opts['include-unsupported-proxy']) return true;
                 if (proxy.type === 'snell' && String(proxy.version) === '4') {
                     return false;
-                } else if (['mieru', 'anytls'].includes(proxy.type)) {
-                    return false;
-                } else if (proxy['underlying-proxy'] || proxy['dialer-proxy']) {
-                    $.error(
-                        `Shadowrocket 不支持前置代理字段. 已过滤节点 ${proxy.name}. 请使用 App 内的 "代理通过" 功能`,
-                    );
+                } else if (['mieru'].includes(proxy.type)) {
                     return false;
                 }
                 return true;

@@ -40,6 +40,7 @@ async function produceArtifact({
     $options,
     proxy,
     noCache,
+    all,
 }) {
     platform = platform || 'JSON';
 
@@ -172,6 +173,9 @@ async function produceArtifact({
             } else if (sub.mergeSources === 'remoteFirst') {
                 raw.push(sub.content);
             }
+        }
+        if (produceType === 'raw') {
+            return JSON.stringify((Array.isArray(raw) ? raw : [raw]).flat());
         }
         // parse proxies
         let proxies = (Array.isArray(raw) ? raw : [raw])
@@ -570,6 +574,9 @@ async function produceArtifact({
                 }
             }
         }
+        if (produceType === 'raw') {
+            return JSON.stringify((Array.isArray(raw) ? raw : [raw]).flat());
+        }
         const files = (Array.isArray(raw) ? raw : [raw]).flat();
         let filesContent = files
             .filter((i) => i != null && i !== '')
@@ -589,7 +596,7 @@ async function produceArtifact({
                   )
                 : { $content: filesContent, $files: files, $options };
 
-        return processed?.$content ?? '';
+        return (all ? processed : processed?.$content) ?? '';
     }
 }
 

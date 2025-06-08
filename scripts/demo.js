@@ -14,10 +14,12 @@ function operator(proxies = [], targetPlatform, context) {
   // 6. `_collectionName` 为组合订阅名, `_collectionDisplayName` 为组合订阅显示名
   // 7. `tls-fingerprint` 为 tls 指纹
   // 8. `underlying-proxy` 为前置代理, 不同平台会自动转换
+  //    例如 $server['underlying-proxy'] = '名称'
   //    只给 mihomo 输出的话, `dialer-proxy` 也行
   //    只给 sing-box 输出的话, `detour` 也行
-  //    只给 egern 输出的话, `prev_hop` 也行
-  //    输出到 Clash/Stash/Shadowrocket 时, 会过滤掉配置了前置代理的节点, 并提示使用对应的功能.
+  //    只给 Egern 输出的话, `prev_hop` 也行
+  //    只给 Shadowrocket 输出的话, `chain` 也行
+  //    输出到 Clash/Stash 时, 会过滤掉配置了前置代理的节点, 并提示使用对应的功能.
   // 9. `trojan`, `tuic`, `hysteria`, `hysteria2`, `juicity` 会在解析时设置 `tls`: true (会使用 tls 类协议的通用逻辑),  输出时删除
   // 10. `sni` 在某些协议里会自动与 `servername` 转换
   // 11. 读取节点的 ca-str 和 _ca (后端文件路径) 字段, 自动计算 fingerprint (参考 https://t.me/zhetengsha/1512)
@@ -56,6 +58,15 @@ function operator(proxies = [], targetPlatform, context) {
   //     body,
   // }
   // console.log($options)
+
+  // 若设置 $options._res.headers
+  // 则会在输出文件时设置响应头, 例如:
+
+  // $options._res = {
+  //   headers: {
+  //     'X-Custom': '1'
+  //   }
+  // }
 
   // targetPlatform 为输出的目标平台
 
@@ -120,7 +131,11 @@ function operator(proxies = [], targetPlatform, context) {
   //     downloadFile, // 下载二进制文件, 见 backend/src/utils/download.js
   //     MMDB, // Node.js 环境 可用于模拟 Surge/Loon 的 $utils.ipasn, $utils.ipaso, $utils.geoip. 具体见 https://t.me/zhetengsha/1269
   //     isValidUUID, // 辅助判断是否为有效的 UUID
+  //     Buffer, // https://github.com/feross/buffer
+  //     Base64, // https://github.com/dankogai/js-base64
+  //     JSON5, // https://github.com/json5/json5
   // }
+  //  为兼容 https://github.com/xishang0128/sparkle 的 JavaScript 覆写, 也可以直接使用 `b64d`(Base64 解码), `b64e`(Base64 编码), `Buffer`, `yaml`(简单兼容了下 `yaml.parse` 和 `yaml.stringify`)
 
   // 如果只是为了快速修改或者筛选 可以参考 脚本操作支持节点快捷脚本 https://t.me/zhetengsha/970 和 脚本筛选支持节点快捷脚本 https://t.me/zhetengsha/1009
   // ⚠️ 注意: 函数式(即本文件这样的 function operator() {}) 和快捷操作(下面使用 $server) 只能二选一

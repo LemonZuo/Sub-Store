@@ -64,6 +64,7 @@ async function getFile(req, res) {
         ignoreFailedRemoteFile,
         proxy,
         noCache,
+        produceType,
     } = req.query;
     let $options = {
         _req: {
@@ -128,6 +129,10 @@ async function getFile(req, res) {
     if (noCache) {
         $.info(`指定不使用缓存: ${noCache}`);
     }
+    if (produceType) {
+        produceType = decodeURIComponent(produceType);
+        $.info(`指定生产类型: ${produceType}`);
+    }
 
     const allFiles = $.read(FILES_KEY);
     const file = findByName(allFiles, name);
@@ -144,6 +149,8 @@ async function getFile(req, res) {
                 $options,
                 proxy,
                 noCache,
+                produceType,
+                all: true,
             });
 
             try {
@@ -178,9 +185,15 @@ async function getFile(req, res) {
                     )}`,
                 );
             }
-            res.set('Content-Type', 'text/plain; charset=utf-8').send(
-                output ?? '',
-            );
+            res.set('Content-Type', 'text/plain; charset=utf-8');
+            if (output?.$options?._res?.headers) {
+                Object.entries(output.$options._res.headers).forEach(
+                    ([key, value]) => {
+                        res.set(key, value);
+                    },
+                );
+            }
+            res.send(output?.$content ?? '');
         } catch (err) {
             $.notify(
                 `🌍 Sub-Store 下载文件失败`,
