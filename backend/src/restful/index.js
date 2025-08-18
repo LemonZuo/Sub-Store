@@ -1,3 +1,5 @@
+import { Base64 } from 'js-base64';
+import _ from 'lodash';
 import express from '@/vendor/express';
 import $ from '@/core/app';
 import migrate from '@/utils/migration';
@@ -95,7 +97,7 @@ export default function serve() {
                     staticFileMiddleware(req, res, next);
                     return;
                 }
-                res.status(403).end('Forbbiden');
+                res.status(404).end();
                 return;
             });
         }
@@ -119,10 +121,11 @@ export default function serve() {
     $app.start();
 
     if ($.env.isNode) {
-        // Deprecated: SUB_STORE_BACKEND_CRON
-        const backend_sync_cron =
-            eval('process.env.SUB_STORE_BACKEND_SYNC_CRON') ||
-            eval('process.env.SUB_STORE_BACKEND_CRON');
+        // Deprecated: SUB_STORE_BACKEND_CRON, SUB_STORE_CRON
+        const backend_sync_cron = eval(
+            'process.env.SUB_STORE_BACKEND_SYNC_CRON',
+        );
+
         if (backend_sync_cron) {
             $.info(`[SYNC CRON] ${backend_sync_cron} enabled`);
             const { CronJob } = eval(`require("cron")`);
@@ -145,6 +148,17 @@ export default function serve() {
                 true, // start
                 // 'Asia/Shanghai' // timeZone
             );
+        } else {
+            if (eval('process.env.SUB_STORE_BACKEND_CRON')) {
+                $.error(
+                    `[SYNC CRON] SUB_STORE_BACKEND_CRON 已弃用, 请使用 SUB_STORE_BACKEND_SYNC_CRON`,
+                );
+            }
+            if (eval('process.env.SUB_STORE_CRON')) {
+                $.error(
+                    `[SYNC CRON] SUB_STORE_CRON 已弃用, 请使用 SUB_STORE_BACKEND_SYNC_CRON`,
+                );
+            }
         }
         // 格式: 0 */2 * * *,sub,a;0 */3 * * *,col,b
         // 每 2 小时处理一次单条订阅 a, 每 3 小时处理一次组合订阅 b
@@ -292,6 +306,7 @@ export default function serve() {
         const path = eval(`require("path")`);
         const fs = eval(`require("fs")`);
         const data_url = eval('process.env.SUB_STORE_DATA_URL');
+        const data_url_post = eval('process.env.SUB_STORE_DATA_URL_POST');
         const fe_be_path = eval('process.env.SUB_STORE_FRONTEND_BACKEND_PATH');
         const fe_port = eval('process.env.SUB_STORE_FRONTEND_PORT') || 3001;
         const fe_host =
@@ -412,10 +427,39 @@ export default function serve() {
         if (data_url) {
             $.info(`[BACKEND] downloading data from ${data_url}`);
             download(data_url)
-                .then((content) => {
-                    $.write(content, '#sub-store');
+                .then(async (content) => {
+                    try {
+                        content = JSON.parse(Base64.decode(content));
+                        if (Object.keys(content.settings).length === 0) {
+                            throw new Error(
+                                '备份文件应该至少包含 settings 字段',
+                            );
+                        }
+                    } catch (err) {
+                        try {
+                            content = JSON.parse(content);
+                            if (Object.keys(content.settings).length === 0) {
+                                throw new Error(
+                                    '备份文件应该至少包含 settings 字段',
+                                );
+                            }
+                        } catch (err) {
+                            $.error(
+                                `Gist 备份文件校验失败, 无法还原\nReason: ${
+                                    err.message ?? err
+                                }`,
+                            );
+                            throw new Error('Gist 备份文件校验失败, 无法还原');
+                        }
+                    }
+                    if (data_url_post) {
+                        $.info('[BACKEND] executing post-processing script');
+                        eval(data_url_post);
+                    }
 
-                    $.cache = JSON.parse(content);
+                    $.write(JSON.stringify(content, null, `  `), '#sub-store');
+
+                    $.cache = content;
                     $.persistCache();
 
                     migrate();

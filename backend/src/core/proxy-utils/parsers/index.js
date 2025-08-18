@@ -12,6 +12,8 @@ import getLoonParser from './peggy/loon';
 import getQXParser from './peggy/qx';
 import getTrojanURIParser from './peggy/trojan-uri';
 import $ from '@/core/app';
+import JSON5 from 'json5';
+import YAML from '@/utils/yaml';
 
 import { Base64 } from 'js-base64';
 
@@ -611,8 +613,8 @@ function URI_VLESS() {
         }
 
         const proxy = {
-            name,
             type: 'vless',
+            name,
             server,
             port,
             uuid,
@@ -1129,15 +1131,21 @@ function URI_Trojan() {
 function Clash_All() {
     const name = 'Clash Parser';
     const test = (line) => {
+        let proxy;
         try {
-            JSON.parse(line);
+            proxy = JSON5.parse(line);
         } catch (e) {
-            return false;
+            proxy = YAML.parse(line);
         }
-        return true;
+        return !!proxy?.type;
     };
     const parse = (line) => {
-        const proxy = JSON.parse(line);
+        let proxy;
+        try {
+            proxy = JSON5.parse(line);
+        } catch (e) {
+            proxy = YAML.parse(line);
+        }
         if (
             ![
                 'anytls',

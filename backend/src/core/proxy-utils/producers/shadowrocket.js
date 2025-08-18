@@ -7,7 +7,7 @@ export default function Shadowrocket_Producer() {
         const list = proxies
             .filter((proxy) => {
                 if (opts['include-unsupported-proxy']) return true;
-                if (proxy.type === 'snell' && String(proxy.version) === '4') {
+                if (proxy.type === 'snell' && proxy.version >= 4) {
                     return false;
                 } else if (['mieru'].includes(proxy.type)) {
                     return false;
@@ -164,6 +164,27 @@ export default function Shadowrocket_Producer() {
                         !Array.isArray(host)
                     ) {
                         proxy['h2-opts'].headers.host = [host];
+                    }
+                }
+                if (['ws'].includes(proxy.network)) {
+                    const networkPath = proxy[`${proxy.network}-opts`]?.path;
+                    if (networkPath) {
+                        const reg = /^(.*?)(?:\?ed=(\d+))?$/;
+                        // eslint-disable-next-line no-unused-vars
+                        const [_, path = '', ed = ''] = reg.exec(networkPath);
+                        proxy[`${proxy.network}-opts`].path = path;
+                        if (ed !== '') {
+                            proxy['ws-opts']['early-data-header-name'] =
+                                'Sec-WebSocket-Protocol';
+                            proxy['ws-opts']['max-early-data'] = parseInt(
+                                ed,
+                                10,
+                            );
+                        }
+                    } else {
+                        proxy[`${proxy.network}-opts`] =
+                            proxy[`${proxy.network}-opts`] || {};
+                        proxy[`${proxy.network}-opts`].path = '/';
                     }
                 }
                 if (proxy['plugin-opts']?.tls) {

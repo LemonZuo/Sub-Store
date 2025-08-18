@@ -1,12 +1,20 @@
 import { isPresent } from '@/core/proxy-utils/producers/utils';
 
+const ipVersions = {
+    dual: 'dual',
+    'v4-only': 'ipv4',
+    'v6-only': 'ipv6',
+    'prefer-v4': 'ipv4-prefer',
+    'prefer-v6': 'ipv6-prefer',
+};
+
 export default function ClashMeta_Producer() {
     const type = 'ALL';
     const produce = (proxies, type, opts = {}) => {
         const list = proxies
             .filter((proxy) => {
                 if (opts['include-unsupported-proxy']) return true;
-                if (proxy.type === 'snell' && String(proxy.version) === '4') {
+                if (proxy.type === 'snell' && proxy.version >= 4) {
                     return false;
                 } else if (['juicity'].includes(proxy.type)) {
                     return false;
@@ -190,6 +198,27 @@ export default function ClashMeta_Producer() {
                         proxy['h2-opts'].headers.host = [host];
                     }
                 }
+                if (['ws'].includes(proxy.network)) {
+                    const networkPath = proxy[`${proxy.network}-opts`]?.path;
+                    if (networkPath) {
+                        const reg = /^(.*?)(?:\?ed=(\d+))?$/;
+                        // eslint-disable-next-line no-unused-vars
+                        const [_, path = '', ed = ''] = reg.exec(networkPath);
+                        proxy[`${proxy.network}-opts`].path = path;
+                        if (ed !== '') {
+                            proxy['ws-opts']['early-data-header-name'] =
+                                'Sec-WebSocket-Protocol';
+                            proxy['ws-opts']['max-early-data'] = parseInt(
+                                ed,
+                                10,
+                            );
+                        }
+                    } else {
+                        proxy[`${proxy.network}-opts`] =
+                            proxy[`${proxy.network}-opts`] || {};
+                        proxy[`${proxy.network}-opts`].path = '/';
+                    }
+                }
 
                 if (proxy['plugin-opts']?.tls) {
                     if (isPresent(proxy, 'skip-cert-verify')) {
@@ -241,6 +270,11 @@ export default function ClashMeta_Producer() {
                 ) {
                     delete proxy[`${proxy.network}-opts`]['_grpc-type'];
                     delete proxy[`${proxy.network}-opts`]['_grpc-authority'];
+                }
+
+                if (proxy['ip-version']) {
+                    proxy['ip-version'] =
+                        ipVersions[proxy['ip-version']] || proxy['ip-version'];
                 }
                 return proxy;
             });

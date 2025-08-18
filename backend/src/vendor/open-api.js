@@ -9,6 +9,7 @@ const isShadowRocket = 'undefined' !== typeof $rocket;
 const isEgern = 'object' == typeof egern;
 const isLanceX = 'undefined' != typeof $native;
 const isGUIforCores = typeof $Plugins !== 'undefined';
+import { Base64 } from 'js-base64';
 
 function isPlainObject(obj) {
     return (
@@ -18,6 +19,26 @@ function isPlainObject(obj) {
     );
 }
 
+function parseSocks5Uri(uri) {
+    // eslint-disable-next-line no-unused-vars
+    let [__, username, password, server, port, query, name] = uri.match(
+        /^socks5:\/\/(?:(.*?):(.*?)@)?(.*?)(?::(\d+?))?(\?.*?)?(?:#(.*?))?$/,
+    );
+    if (port) {
+        port = parseInt(port, 10);
+    } else {
+        $.error(`port is not present in line: ${uri}`);
+        throw new Error(`port is not present in line: ${uri}`);
+    }
+    return {
+        type: 5,
+        host: server,
+        port,
+
+        userId: username != null ? decodeURIComponent(username) : undefined,
+        password: password != null ? decodeURIComponent(password) : undefined,
+    };
+}
 export class OpenAPI {
     constructor(name = 'untitled', debug = false) {
         this.name = name;
@@ -100,13 +121,27 @@ export class OpenAPI {
             if (this.node.fs.existsSync(fpath)) {
                 try {
                     this.cache = JSON.parse(
-                        this.node.fs.readFileSync(`${fpath}`),
+                        this.node.fs.readFileSync(`${fpath}`, 'utf-8'),
                     );
+                    if (!isPlainObject(this.cache))
+                        throw new Error('Invalid Data');
                 } catch (e) {
-                    this.node.fs.copyFileSync(fpath, backupPath);
-                    this.error(
-                        `Failed to parse ${fpath}: ${e.message}. Backup created at ${backupPath}`,
-                    );
+                    try {
+                        const str = Base64.decode(
+                            this.node.fs.readFileSync(`${fpath}`, 'utf-8'),
+                        );
+                        this.cache = JSON.parse(str);
+                        this.node.fs.writeFileSync(fpath, str, {
+                            flag: 'w',
+                        });
+                        if (!isPlainObject(this.cache))
+                            throw new Error('Invalid Data');
+                    } catch (e) {
+                        this.node.fs.copyFileSync(fpath, backupPath);
+                        this.error(
+                            `Failed to parse ${fpath}: ${e.message}. Backup created at ${backupPath}`,
+                        );
+                    }
                 }
             }
             if (!isPlainObject(this.cache)) {
@@ -393,6 +428,7 @@ export function HTTP(defaultOptions = { baseURL: '' }) {
                 }
                 if (isNode) {
                     const undici = eval("require('undici')");
+                    const { socksDispatcher } = eval("require('fetch-socks')");
                     const {
                         ProxyAgent,
                         EnvHttpProxyAgent,
@@ -422,16 +458,34 @@ export function HTTP(defaultOptions = { baseURL: '' }) {
                                 ).toString('base64')}`,
                             };
                         }
+                        let dispatcher;
+                        if (!opts.proxy) {
+                            const allProxy =
+                                eval('process.env.all_proxy') ||
+                                eval('process.env.ALL_PROXY');
+                            if (allProxy && /^socks5:\/\//.test(allProxy)) {
+                                opts.proxy = allProxy;
+                            }
+                        }
+                        if (opts.proxy) {
+                            if (/^socks5:\/\//.test(opts.proxy)) {
+                                dispatcher = socksDispatcher(
+                                    parseSocks5Uri(opts.proxy),
+                                    agentOpts,
+                                );
+                            } else {
+                                dispatcher = new ProxyAgent({
+                                    ...agentOpts,
+                                    uri: opts.proxy,
+                                });
+                            }
+                        } else {
+                            dispatcher = new EnvHttpProxyAgent(agentOpts);
+                        }
                         const response = await request(opts.url, {
                             ...opts,
                             method: method.toUpperCase(),
-                            dispatcher: (opts.proxy
-                                ? new ProxyAgent({
-                                      ...agentOpts,
-                                      uri: opts.proxy,
-                                  })
-                                : new EnvHttpProxyAgent(agentOpts)
-                            ).compose(
+                            dispatcher: dispatcher.compose(
                                 interceptors.redirect({
                                     maxRedirections: 3,
                                     throwOnMaxRedirects: true,
@@ -484,6 +538,7 @@ export function HTTP(defaultOptions = { baseURL: '' }) {
                         url: options.url,
                         headers: options.headers,
                         body: options.body,
+                        autoTransformBody: false,
                         options: {
                             Proxy: options.proxy,
                             Timeout: options.timeout

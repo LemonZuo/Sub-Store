@@ -14,6 +14,8 @@ import $ from '@/core/app';
 import { findByName } from '@/utils/database';
 import { produceArtifact } from '@/restful/sync';
 import PROXY_PREPROCESSORS from '@/core/proxy-utils/preprocessors';
+import { ProxyUtils } from '@/core/proxy-utils';
+
 const clashPreprocessor = PROXY_PREPROCESSORS.find(
     (processor) => processor.name === 'Clash Pre-processor',
 );
@@ -254,6 +256,20 @@ export default async function download(
                         `资源大小 ${size.toFixed(
                             2,
                         )} KB 超过了 ${cacheThreshold} KB, 不缓存`,
+                    );
+                    shouldCache = false;
+                }
+            }
+            if (preprocess) {
+                try {
+                    const proxies = ProxyUtils.parse(body);
+                    if (!Array.isArray(proxies) || proxies.length === 0) {
+                        $.error(`URL ${url} 不包含有效节点, 不缓存`);
+                        shouldCache = false;
+                    }
+                } catch (e) {
+                    $.error(
+                        `URL ${url} 尝试解析节点失败 ${e.message ?? e}, 不缓存`,
                     );
                     shouldCache = false;
                 }

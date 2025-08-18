@@ -51,7 +51,6 @@ function createFile(req, res) {
 
 async function getFile(req, res) {
     let { name } = req.params;
-    name = decodeURIComponent(name);
     const reqUA = req.headers['user-agent'] || req.headers['User-Agent'];
     $.info(`正在下载文件：${name}\n请求 User-Agent: ${reqUA}`);
     let {
@@ -95,42 +94,33 @@ async function getFile(req, res) {
         $.info(`传入 $options: ${JSON.stringify($options)}`);
     }
     if (url) {
-        url = decodeURIComponent(url);
         $.info(`指定远程文件 URL: ${url}`);
     }
     if (proxy) {
-        proxy = decodeURIComponent(proxy);
         $.info(`指定远程订阅使用代理/策略 proxy: ${proxy}`);
     }
     if (ua) {
-        ua = decodeURIComponent(ua);
         $.info(`指定远程文件 User-Agent: ${ua}`);
     }
     if (subInfoUrl) {
-        subInfoUrl = decodeURIComponent(subInfoUrl);
         $.info(`指定获取流量的 subInfoUrl: ${subInfoUrl}`);
     }
     if (subInfoUserAgent) {
-        subInfoUserAgent = decodeURIComponent(subInfoUserAgent);
         $.info(`指定获取流量的 subInfoUserAgent: ${subInfoUserAgent}`);
     }
     if (content) {
-        content = decodeURIComponent(content);
         $.info(`指定本地文件: ${content}`);
     }
     if (mergeSources) {
-        mergeSources = decodeURIComponent(mergeSources);
         $.info(`指定合并来源: ${mergeSources}`);
     }
     if (ignoreFailedRemoteFile != null && ignoreFailedRemoteFile !== '') {
-        ignoreFailedRemoteFile = decodeURIComponent(ignoreFailedRemoteFile);
         $.info(`指定忽略失败的远程文件: ${ignoreFailedRemoteFile}`);
     }
     if (noCache) {
         $.info(`指定不使用缓存: ${noCache}`);
     }
     if (produceType) {
-        produceType = decodeURIComponent(produceType);
         $.info(`指定生产类型: ${produceType}`);
     }
 
@@ -193,6 +183,9 @@ async function getFile(req, res) {
                     },
                 );
             }
+            if (output?.$options?._res?.status) {
+                res.status(output.$options._res.status);
+            }
             res.send(output?.$content ?? '');
         } catch (err) {
             $.notify(
@@ -225,7 +218,6 @@ async function getFile(req, res) {
 function getWholeFile(req, res) {
     let { name } = req.params;
     let { raw } = req.query;
-    name = decodeURIComponent(name);
     const allFiles = $.read(FILES_KEY);
     const file = findByName(allFiles, name);
     if (file) {
@@ -257,7 +249,6 @@ function getWholeFile(req, res) {
 
 function updateFile(req, res) {
     let { name } = req.params;
-    name = decodeURIComponent(name);
     let file = req.body;
     const allFiles = $.read(FILES_KEY);
     const oldFile = findByName(allFiles, name);
@@ -299,7 +290,6 @@ function updateFile(req, res) {
 
 function deleteFile(req, res) {
     let { name } = req.params;
-    name = decodeURIComponent(name);
     $.info(`正在删除文件：${name}`);
     let allFiles = $.read(FILES_KEY);
     deleteByName(allFiles, name);

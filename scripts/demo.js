@@ -9,7 +9,7 @@ function operator(proxies = [], targetPlatform, context) {
   // 1. `_no-resolve` 为不解析域名
   // 2. 域名解析后 会多一个 `_resolved` 字段, 表示是否解析成功
   // 3. 域名解析后会有`_IPv4`, `_IPv6`, `_IP`(若有多个步骤, 只取第一次成功的 v4 或 v6 数据), `_IP4P`(若解析类型为 IPv6 且符合 IP4P 类型, 将自动转换), `_domain` 字段, `_resolved_ips` 为解析出的所有 IP
-  // 4. 节点字段 `exec` 为 `ssr-local` 路径, 默认 `/usr/local/bin/ssr-local`; 端口从 10000 开始递增(暂不支持配置)
+  // 4. 节点字段 _exec 为 mihomo 路径, 默认 /usr/local/bin/mihomo; 节点字段 _localPort 端口为初始端口号, 逐个递减, 默认为 65535. _defaultNameserver(默认为 [ '180.76.76.76', '52.80.52.52', '119.28.28.28', '223.6.6.6' ]) 和 _nameserver (默认为 [ 'https://doh.pub/dns-query', 'https://dns.alidns.com/dns-query', 'https://doh-pure.onedns.net/dns-query' ]) 为数组 用于自定义mihomo 的 default-nameserver 和 nameserver, 这个是配置 Surge for macOS 必须手动指定链接参数 target=SurgeMac 或在 同步配置 中指定 SurgeMac 来启用 mihomo 支援 Surge 本身不支持的协议. 详见 https://t.me/zhetengsha/1735
   // 5. `_subName` 为单条订阅名, `_subDisplayName` 为单条订阅显示名
   // 6. `_collectionName` 为组合订阅名, `_collectionDisplayName` 为组合订阅显示名
   // 7. `tls-fingerprint` 为 tls 指纹
@@ -26,7 +26,7 @@ function operator(proxies = [], targetPlatform, context) {
   // 12. 以 Surge 为例, 最新的参数一般我都会跟进, 以 Surge 文档为例, 一些常用的: TUIC/Hysteria 2 的 `ecn`, Snell 的 `reuse` 连接复用, QUIC 策略 block-quic`, Hysteria 2 下载带宽 `down`
   // 13. `test-url` 为测延迟链接, `test-timeout` 为测延迟超时
   // 14. `ports` 为端口跳跃, `hop-interval` 变换端口号的时间间隔
-  // 15. `ip-version` 设置节点使用 IP 版本，可选：dual，ipv4，ipv6，ipv4-prefer，ipv6-prefer. 会进行内部转换, 若无法匹配则使用原始值
+  // 15. `ip-version` 设置节点使用 IP 版本，兼容各家的值. 会进行内部转换. sing-box 以外: 若无法匹配则使用原始值. sing-box: 需有匹配且节点上设置 `_dns_server` 字段, 将自动设置 `domain_resolver.server`
   // 16. `sing-box` 支持使用 `_network` 来设置 `network`, 例如 `tcp`, `udp`
   // 17. `block-quic` 支持 `auto`, `on`, `off`. 不同的平台不一定都支持, 会自动转换
 
@@ -66,6 +66,25 @@ function operator(proxies = [], targetPlatform, context) {
   //   headers: {
   //     'X-Custom': '1'
   //   }
+  // }
+
+  // 若设置 $options._res.status
+  // 则会在输出文件时设置响应状态码, 例如:
+
+  // $options._res = {
+  //   status: 404
+  // }
+
+  // 一个示例: 请求来自分享且 ua 不符合时, 返回自定义状态码和响应内容
+
+  // const { headers, url, path } = $options._req || {}
+  // const ua = headers?.['user-agent'] || headers?.['User-Agent']
+
+  // if (/^\/share\//.test(url) && !/surge/i.test(ua)) {
+  //   $options._res = {
+  //     status: 418
+  //   }
+  //   $content = `I'm a teapot`
   // }
 
   // targetPlatform 为输出的目标平台
@@ -151,6 +170,18 @@ function operator(proxies = [], targetPlatform, context) {
   // });
   // $server.sni = sni
 
+  // 示例: 从 config 文件中读取配置项并进行节点操作
+  // config 的本地内容为
+  // {
+  //   "reuse": false
+  // }
+  // 脚本操作为
+  // const config = (ProxyUtils.JSON5 || JSON).parse(await produceArtifact({
+  //     type: 'file',
+  //     name: 'config' // 文件名
+  // }))
+  // $server.reuse = config.reuse
+
   // 1. Surge 输出 WireGuard 完整配置
 
   // let proxies = await produceArtifact({
@@ -235,14 +266,14 @@ function operator(proxies = [], targetPlatform, context) {
   // 这个历史遗留原因, 是有点复杂. 提供一个例子, 用来取当前脚本所在的组合订阅或单条订阅名称
 
   // let name = ''
-  // for (const [key, value] of Object.entries(env.source)) {
+  // for (const [key, value] of Object.entries(context.source)) {
   //   if (!key.startsWith('_')) {
   //     name = value.displayName || value.name
   //     break
   //   }
   // }
   // if (!name) {
-  //   const collection = env.source._collection
+  //   const collection = context.source._collection
   //   name = collection.displayName || collection.name
   // }
 
