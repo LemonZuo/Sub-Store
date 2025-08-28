@@ -621,10 +621,12 @@ function URI_VLESS() {
         };
         const params = {};
         for (const addon of addons.split('&')) {
-            const [key, valueRaw] = addon.split('=');
-            let value = valueRaw;
-            value = decodeURIComponent(valueRaw);
-            params[key] = value;
+            if (addon) {
+                const [key, valueRaw] = addon.split('=');
+                let value = valueRaw;
+                value = decodeURIComponent(valueRaw);
+                params[key] = value;
+            }
         }
 
         proxy.name =
@@ -753,6 +755,8 @@ function URI_AnyTLS() {
         return /^anytls:\/\//.test(line);
     };
     const parse = (line) => {
+        const parsed = URI_VLESS().parse(line.replace('anytls', 'vless'));
+        // 偷个懒
         line = line.split(/anytls:\/\//)[1];
         // eslint-disable-next-line no-unused-vars
         let [__, password, server, port, addons = '', name] =
@@ -769,6 +773,8 @@ function URI_AnyTLS() {
         name = name ?? `AnyTLS ${server}:${port}`;
 
         const proxy = {
+            ...parsed,
+            uuid: undefined,
             type: 'anytls',
             name,
             server,
@@ -777,20 +783,25 @@ function URI_AnyTLS() {
         };
 
         for (const addon of addons.split('&')) {
-            let [key, value] = addon.split('=');
-            key = key.replace(/_/g, '-');
-            value = decodeURIComponent(value);
-            if (['alpn'].includes(key)) {
-                proxy[key] = value ? value.split(',') : undefined;
-            } else if (['insecure'].includes(key)) {
-                proxy['skip-cert-verify'] = /(TRUE)|1/i.test(value);
-            } else if (['udp'].includes(key)) {
-                proxy[key] = /(TRUE)|1/i.test(value);
-            } else {
-                proxy[key] = value;
+            if (addon) {
+                let [key, value] = addon.split('=');
+                key = key.replace(/_/g, '-');
+                value = decodeURIComponent(value);
+                if (['alpn'].includes(key)) {
+                    proxy[key] = value ? value.split(',') : undefined;
+                } else if (['insecure'].includes(key)) {
+                    proxy['skip-cert-verify'] = /(TRUE)|1/i.test(value);
+                } else if (['udp'].includes(key)) {
+                    proxy[key] = /(TRUE)|1/i.test(value);
+                } else if (!Object.keys(proxy).includes(key)) {
+                    proxy[key] = value;
+                }
             }
         }
-
+        if (['tcp'].includes(proxy.network) && !proxy['reality-opts']) {
+            delete proxy.network;
+            delete proxy.security;
+        }
         return proxy;
     };
     return { name, test, parse };
@@ -856,10 +867,12 @@ function URI_Hysteria2() {
 
         const params = {};
         for (const addon of addons.split('&')) {
-            const [key, valueRaw] = addon.split('=');
-            let value = valueRaw;
-            value = decodeURIComponent(valueRaw);
-            params[key] = value;
+            if (addon) {
+                const [key, valueRaw] = addon.split('=');
+                let value = valueRaw;
+                value = decodeURIComponent(valueRaw);
+                params[key] = value;
+            }
         }
 
         proxy.sni = params.sni;
@@ -918,30 +931,32 @@ function URI_Hysteria() {
         };
         const params = {};
         for (const addon of addons.split('&')) {
-            let [key, value] = addon.split('=');
-            key = key.replace(/_/, '-');
-            value = decodeURIComponent(value);
-            if (['alpn'].includes(key)) {
-                proxy[key] = value ? value.split(',') : undefined;
-            } else if (['insecure'].includes(key)) {
-                proxy['skip-cert-verify'] = /(TRUE)|1/i.test(value);
-            } else if (['auth'].includes(key)) {
-                proxy['auth-str'] = value;
-            } else if (['mport'].includes(key)) {
-                proxy['ports'] = value;
-            } else if (['obfsParam'].includes(key)) {
-                proxy['obfs'] = value;
-            } else if (['upmbps'].includes(key)) {
-                proxy['up'] = value;
-            } else if (['downmbps'].includes(key)) {
-                proxy['down'] = value;
-            } else if (['obfs'].includes(key)) {
-                // obfs: Obfuscation mode (optional, empty or "xplus")
-                proxy['_obfs'] = value || '';
-            } else if (['fast-open', 'peer'].includes(key)) {
-                params[key] = value;
-            } else {
-                proxy[key] = value;
+            if (addon) {
+                let [key, value] = addon.split('=');
+                key = key.replace(/_/, '-');
+                value = decodeURIComponent(value);
+                if (['alpn'].includes(key)) {
+                    proxy[key] = value ? value.split(',') : undefined;
+                } else if (['insecure'].includes(key)) {
+                    proxy['skip-cert-verify'] = /(TRUE)|1/i.test(value);
+                } else if (['auth'].includes(key)) {
+                    proxy['auth-str'] = value;
+                } else if (['mport'].includes(key)) {
+                    proxy['ports'] = value;
+                } else if (['obfsParam'].includes(key)) {
+                    proxy['obfs'] = value;
+                } else if (['upmbps'].includes(key)) {
+                    proxy['up'] = value;
+                } else if (['downmbps'].includes(key)) {
+                    proxy['down'] = value;
+                } else if (['obfs'].includes(key)) {
+                    // obfs: Obfuscation mode (optional, empty or "xplus")
+                    proxy['_obfs'] = value || '';
+                } else if (['fast-open', 'peer'].includes(key)) {
+                    params[key] = value;
+                } else if (!Object.keys(proxy).includes(key)) {
+                    proxy[key] = value;
+                }
             }
         }
 
@@ -993,22 +1008,24 @@ function URI_TUIC() {
         };
 
         for (const addon of addons.split('&')) {
-            let [key, value] = addon.split('=');
-            key = key.replace(/_/g, '-');
-            value = decodeURIComponent(value);
-            if (['alpn'].includes(key)) {
-                proxy[key] = value ? value.split(',') : undefined;
-            } else if (['allow-insecure'].includes(key)) {
-                proxy['skip-cert-verify'] = /(TRUE)|1/i.test(value);
-            } else if (['fast-open'].includes(key)) {
-                proxy.tfo = true;
-            } else if (['disable-sni', 'reduce-rtt'].includes(key)) {
-                proxy[key] = /(TRUE)|1/i.test(value);
-            } else if (key === 'congestion-control') {
-                proxy['congestion-controller'] = value;
-                delete proxy[key];
-            } else {
-                proxy[key] = value;
+            if (addon) {
+                let [key, value] = addon.split('=');
+                key = key.replace(/_/g, '-');
+                value = decodeURIComponent(value);
+                if (['alpn'].includes(key)) {
+                    proxy[key] = value ? value.split(',') : undefined;
+                } else if (['allow-insecure', 'insecure'].includes(key)) {
+                    proxy['skip-cert-verify'] = /(TRUE)|1/i.test(value);
+                } else if (['fast-open'].includes(key)) {
+                    proxy.tfo = true;
+                } else if (['disable-sni', 'reduce-rtt'].includes(key)) {
+                    proxy[key] = /(TRUE)|1/i.test(value);
+                } else if (key === 'congestion-control') {
+                    proxy['congestion-controller'] = value;
+                    delete proxy[key];
+                } else if (!Object.keys(proxy).includes(key)) {
+                    proxy[key] = value;
+                }
             }
         }
 
@@ -1055,43 +1072,45 @@ function URI_WireGuard() {
             udp: true,
         };
         for (const addon of addons.split('&')) {
-            let [key, value] = addon.split('=');
-            key = key.replace(/_/, '-');
-            value = decodeURIComponent(value);
-            if (['reserved'].includes(key)) {
-                const parsed = value
-                    .split(',')
-                    .map((i) => parseInt(i.trim(), 10))
-                    .filter((i) => Number.isInteger(i));
-                if (parsed.length === 3) {
-                    proxy[key] = parsed;
-                }
-            } else if (['address', 'ip'].includes(key)) {
-                value.split(',').map((i) => {
-                    const ip = i
-                        .trim()
-                        .replace(/\/\d+$/, '')
-                        .replace(/^\[/, '')
-                        .replace(/\]$/, '');
-                    if (isIPv4(ip)) {
-                        proxy.ip = ip;
-                    } else if (isIPv6(ip)) {
-                        proxy.ipv6 = ip;
+            if (addon) {
+                let [key, value] = addon.split('=');
+                key = key.replace(/_/, '-');
+                value = decodeURIComponent(value);
+                if (['reserved'].includes(key)) {
+                    const parsed = value
+                        .split(',')
+                        .map((i) => parseInt(i.trim(), 10))
+                        .filter((i) => Number.isInteger(i));
+                    if (parsed.length === 3) {
+                        proxy[key] = parsed;
                     }
-                });
-            } else if (['mtu'].includes(key)) {
-                const parsed = parseInt(value.trim(), 10);
-                if (Number.isInteger(parsed)) {
-                    proxy[key] = parsed;
+                } else if (['address', 'ip'].includes(key)) {
+                    value.split(',').map((i) => {
+                        const ip = i
+                            .trim()
+                            .replace(/\/\d+$/, '')
+                            .replace(/^\[/, '')
+                            .replace(/\]$/, '');
+                        if (isIPv4(ip)) {
+                            proxy.ip = ip;
+                        } else if (isIPv6(ip)) {
+                            proxy.ipv6 = ip;
+                        }
+                    });
+                } else if (['mtu'].includes(key)) {
+                    const parsed = parseInt(value.trim(), 10);
+                    if (Number.isInteger(parsed)) {
+                        proxy[key] = parsed;
+                    }
+                } else if (/publickey/i.test(key)) {
+                    proxy['public-key'] = value;
+                } else if (/privatekey/i.test(key)) {
+                    proxy['private-key'] = value;
+                } else if (['udp'].includes(key)) {
+                    proxy[key] = /(TRUE)|1/i.test(value);
+                } else if (![...Object.keys(proxy), 'flag'].includes(key)) {
+                    proxy[key] = value;
                 }
-            } else if (/publickey/i.test(key)) {
-                proxy['public-key'] = value;
-            } else if (/privatekey/i.test(key)) {
-                proxy['private-key'] = value;
-            } else if (['udp'].includes(key)) {
-                proxy[key] = /(TRUE)|1/i.test(value);
-            } else if (!['flag'].includes(key)) {
-                proxy[key] = value;
             }
         }
 

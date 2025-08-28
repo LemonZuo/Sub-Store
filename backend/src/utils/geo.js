@@ -31,6 +31,8 @@ const ISOFlags = {
     '🇨🇿': ['CZ', 'CZE'],
     '🇩🇪': ['DE', 'DEU'],
     '🇩🇰': ['DK', 'DNK'],
+    // 新增阿尔及利亚 ISO 代码
+    '🇩🇿': ['DZ', 'DZA'],
     '🇪🇨': ['EC', 'ECU'],
     '🇪🇪': ['EE', 'EST'],
     '🇪🇬': ['EG', 'EGY'],
@@ -108,6 +110,8 @@ const ISOFlags = {
     '🇺🇦': ['UA', 'UKR'],
     '🇺🇸': ['US', 'USA', 'LAX', 'SFO', 'SJC'],
     '🇺🇾': ['UY', 'URY'],
+    // 新增 梵蒂冈 ISO 代码
+    '🇻🇦': ['VA', 'VAT'],
     '🇻🇪': ['VE', 'VEN'],
     '🇻🇳': ['VN', 'VNM'],
     '🇿🇦': ['ZA', 'ZAF', 'JNB'],
@@ -124,7 +128,8 @@ export function getFlag(name) {
         '🏳️‍🌈': ['流量', '时间', '过期', 'Bandwidth', 'Expire'],
         '🇸🇱': ['应急', '测试节点'],
         '🇦🇩': ['Andorra', '安道尔'],
-        '🇦🇪': ['United Arab Emirates', '阿联酋', '迪拜'],
+        // 新增 Dubai 英文匹配
+        '🇦🇪': ['United Arab Emirates', '阿联酋', '迪拜', 'Dubai'],
         '🇦🇫': ['Afghanistan', '阿富汗'],
         '🇦🇱': ['Albania', '阿尔巴尼亚', '阿爾巴尼亞'],
         '🇦🇲': ['Armenia', '亚美尼亚'],
@@ -172,7 +177,8 @@ export function getFlag(name) {
         '🇨🇴': ['Colombia', '哥伦比亚'],
         '🇨🇷': ['Costa Rica', '哥斯达黎加'],
         '🇨🇾': ['Cyprus', '塞浦路斯'],
-        '🇨🇿': ['Czechia', '捷克'],
+        // 补充 Czech / Czech Republic 匹配
+        '🇨🇿': ['Czechia', '捷克', 'Czech', 'Czech Republic'],
         '🇩🇪': [
             'German',
             '德国',
@@ -187,6 +193,8 @@ export function getFlag(name) {
             '德意志',
         ],
         '🇩🇰': ['Denmark', '丹麦', '丹麥'],
+        // 新增 阿尔及利亚
+        '🇩🇿': ['Algeria', '阿尔及利亚', '阿爾及利亞'],
         '🇪🇨': ['Ecuador', '厄瓜多尔'],
         '🇪🇪': ['Estonia', '爱沙尼亚'],
         '🇪🇬': ['Egypt', '埃及'],
@@ -398,6 +406,8 @@ export function getFlag(name) {
             'Virginia',
         ],
         '🇺🇾': ['Uruguay', '乌拉圭'],
+        // 新增 梵蒂冈 及别名
+        '🇻🇦': ['Vatican', 'Vatican City', 'Holy See', '梵蒂冈', '梵蒂岡'],
         '🇻🇪': ['Venezuela', '委内瑞拉'],
         '🇻🇳': ['Vietnam', '越南', '胡志明'],
         '🇿🇦': ['South Africa', '南非'],
