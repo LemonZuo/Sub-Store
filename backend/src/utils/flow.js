@@ -64,7 +64,7 @@ export async function getFlowHeaders(
     if ($.env.isNode) {
         proxy = proxy || eval('process.env.SUB_STORE_BACKEND_DEFAULT_PROXY');
     }
-    const userAgent = ua || defaultFlowUserAgent || 'clash';
+    const userAgent = ua || defaultFlowUserAgent || 'clash.meta/v1.19.16';
     const requestTimeout = timeout || defaultTimeout || 8000;
     const id = hex_md5(userAgent + url);
     const cached = headersResourceCache.get(id);
@@ -186,7 +186,8 @@ export function parseFlowHeaders(flowHeaders) {
     const uploadMatch = flowHeaders.match(
         /upload=([-+]?)([0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?)/,
     );
-    const upload = Number(uploadMatch[1] + uploadMatch[2]);
+    const upload =
+        uploadMatch == null ? 0 : Number(uploadMatch[1] + uploadMatch[2]);
 
     const downloadMatch = flowHeaders.match(
         /download=([-+]?)([0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?)/,

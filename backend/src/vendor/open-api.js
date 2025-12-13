@@ -472,12 +472,24 @@ export function HTTP(defaultOptions = { baseURL: '' }) {
                         connect: {
                             rejectUnauthorized:
                                 opts.strictSSL === false ||
-                                opts.insecure === true
+                                opts.insecure === true ||
+                                opts.rejectUnauthorized === false
                                     ? false
                                     : true,
                         },
                         bodyTimeout: opts.timeout,
                         headersTimeout: opts.timeout,
+                        maxHeaderSize:
+                            eval('process.env.SUB_STORE_MAX_HEADER_SIZE') ||
+                            32 * 1024,
+                    };
+                    const tlsOptions = {
+                        rejectUnauthorized:
+                            agentOpts.connect.rejectUnauthorized,
+                    };
+                    opts.tls = {
+                        ...(opts.tls || {}),
+                        ...tlsOptions,
                     };
                     try {
                         const url = new URL(opts.url);
@@ -504,16 +516,23 @@ export function HTTP(defaultOptions = { baseURL: '' }) {
                             if (/^socks5:\/\//.test(opts.proxy)) {
                                 dispatcher = socksDispatcher(
                                     parseSocks5Uri(opts.proxy),
-                                    agentOpts,
+                                    {
+                                        ...agentOpts,
+                                        requestTls: tlsOptions,
+                                    },
                                 );
                             } else {
                                 dispatcher = new ProxyAgent({
                                     ...agentOpts,
                                     uri: opts.proxy,
+                                    requestTls: tlsOptions,
                                 });
                             }
                         } else {
-                            dispatcher = new EnvHttpProxyAgent(agentOpts);
+                            dispatcher = new EnvHttpProxyAgent({
+                                ...agentOpts,
+                                requestTls: tlsOptions,
+                            });
                         }
                         const response = await request(opts.url, {
                             ...opts,
