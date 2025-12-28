@@ -5,7 +5,7 @@ function operator(proxies = [], targetPlatform, context) {
 
   // proxies 为传入的内部节点数组
   // 可在预览界面点击节点查看 JSON 结构 或查看 `target=JSON` 的通用订阅
-  // 0. 结构大致参考了 Clash.Meta(mihomo), 可参考 mihomo 的文档, 例如 `xudp`, `smux` 都可以自己设置. 但是有私货, 下面是我能想起来的一些私货
+  // 0. 结构大致参考了 Clash.Meta(mihomo), 可参考 mihomo 的文档, 例如 `xudp`, `smux` 都可以自己设置. 但是有私货, 下面是我能想起来的一些私货. 顺便说一下, 关于 mihomo 不支持的协议, 其实也可以用 JSON/JSON5/YAML 格式来输入, 写法可参考使用 includeUnsupportedProxy 参数或开启 包含官方/商店版不支持的协议 开关时的 mihomo 输出内容, 例如 NaiveProxy 输入写法 (https://t.me/zhetengsha/4308)
   // 1. `_no-resolve` 为不解析域名
   // 2. 域名解析后 会多一个 `_resolved` 字段, 表示是否解析成功
   // 3. 域名解析后会有`_IPv4`, `_IPv6`, `_IP`(若有多个步骤, 只取第一次成功的 v4 或 v6 数据), `_IP4P`(若解析类型为 IPv6 且符合 IP4P 类型, 将自动转换), `_domain` 字段, `_resolved_ips` 为解析出的所有 IP
@@ -31,6 +31,7 @@ function operator(proxies = [], targetPlatform, context) {
   // 17. `block-quic` 支持 `auto`, `on`, `off`. 不同的平台不一定都支持, 会自动转换
   // 18. `sing-box` 支持 `_fragment`, `_fragment_fallback_delay`, `_record_fragment` 设置 `tls` 的 `fragment`, `fragment_fallback_delay`, `record_fragment`
   // 19. `sing-box` 支持 `_certificate`, `_certificate_path`, `_certificate_public_key_sha256`, `_client_certificate`, `_client_certificate_path`, `_client_key`, `_client_key_path` 设置 `tls` 的 `certificate`, `certificate_path`, `certificate_public_key_sha256`, `client_certificate`, `client_certificate_path`, `client_key`, `client_key_path`
+  // 20. `interface-name` 指定流量出站接口 只给 Surge 用的话, `interface` 也可以
 
   // require 为 Node.js 的 require, 在 Node.js 运行环境下 可以用来引入模块
   // 例如在 Node.js 环境下, 将文件内容写入 /tmp/1.txt 文件
@@ -256,7 +257,9 @@ function operator(proxies = [], targetPlatform, context) {
   // 可参考:
   // 1. https://t.me/zhetengsha/948
 
-  // context 为传入的上下文
+  // context 为传入的上下文, 可在多个脚本中共享使用
+  // 其中 env 为 环境信息, 包含运行版本和其他后端信息
+
   // 其中 source 为 订阅和组合订阅的数据, 有三种情况, 按需判断 (若只需要取订阅/组合订阅名称 直接用 `_subName` `_subDisplayName` `_collectionName` `_collectionDisplayName` 即可)
 
   // 若存在 `source._collection` 且 `source._collection.subscriptions` 中的 key 在 `source` 上也存在, 说明输出结果为组合订阅, 但是脚本设置在单条订阅上

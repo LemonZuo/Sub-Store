@@ -84,7 +84,7 @@ function parse(raw) {
         if (['vless', 'vmess'].includes(proxy.type)) {
             const isProxyUUIDValid = isValidUUID(proxy.uuid);
             if (!isProxyUUIDValid) {
-                $.error(`UUID may be invalid: ${proxy.name} ${proxy.uuid}`);
+                $.info(`UUID may be invalid: ${proxy.name} ${proxy.uuid}`);
             }
             // return isProxyUUIDValid;
         }
@@ -99,6 +99,7 @@ async function processFn(
     source,
     $options,
 ) {
+    let context = {};
     for (const item of operators) {
         if (item.disabled) {
             $.log(
@@ -222,6 +223,7 @@ async function processFn(
                 $arguments,
                 source,
                 $options,
+                context,
             );
         } else {
             processor = PROXY_PROCESSORS[item.type](item.args || {});
@@ -252,7 +254,7 @@ function produce(proxies, targetPlatform, type, opts = {}) {
         if (['vless', 'vmess'].includes(proxy.type)) {
             const isProxyUUIDValid = isValidUUID(proxy.uuid);
             if (!isProxyUUIDValid)
-                $.error(`UUID may be invalid: ${proxy.name} ${proxy.uuid}`);
+                $.info(`UUID may be invalid: ${proxy.name} ${proxy.uuid}`);
             // return isProxyUUIDValid;
         }
 
@@ -453,6 +455,7 @@ function lastParse(proxy) {
             'hysteria2',
             'juicity',
             'anytls',
+            'naive',
         ].includes(proxy.type)
     ) {
         proxy.tls = true;
