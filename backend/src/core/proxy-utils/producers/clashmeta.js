@@ -73,6 +73,10 @@ export default function ClashMeta_Producer() {
                 return true;
             })
             .map((proxy) => {
+                if (['trojan', 'vmess', 'vless'].includes(proxy.type)) {
+                    proxy['client-fingerprint'] =
+                        proxy['client-fingerprint'] || 'chrome';
+                }
                 if (proxy.type === 'vmess') {
                     // handle vmess aead
                     if (isPresent(proxy, 'aead')) {

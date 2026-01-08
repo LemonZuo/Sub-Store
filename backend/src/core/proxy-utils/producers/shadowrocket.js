@@ -11,6 +11,22 @@ export default function Shadowrocket_Producer() {
                     return false;
                 } else if (['mieru', 'sudoku', 'naive'].includes(proxy.type)) {
                     return false;
+                } else if (
+                    proxy.encryption &&
+                    proxy.encryption !== 'none' &&
+                    ['vless'].includes(proxy.type)
+                ) {
+                    return false;
+                } else if (
+                    ['anytls'].includes(proxy.type) &&
+                    proxy.network &&
+                    (!['tcp'].includes(proxy.network) ||
+                        (['tcp'].includes(proxy.network) &&
+                            proxy['reality-opts']))
+                ) {
+                    return false;
+                } else if (['xhttp'].includes(proxy.network)) {
+                    return false;
                 }
                 return true;
             })
@@ -128,16 +144,6 @@ export default function Shadowrocket_Producer() {
                         delete proxy['shadow-tls-sni'];
                         delete proxy['shadow-tls-version'];
                     }
-                } else if (
-                    ['anytls'].includes(proxy.type) &&
-                    proxy.network &&
-                    (!['tcp'].includes(proxy.network) ||
-                        (['tcp'].includes(proxy.network) &&
-                            proxy['reality-opts']))
-                ) {
-                    return false;
-                } else if (['xhttp'].includes(proxy.network)) {
-                    return false;
                 }
 
                 if (

@@ -77,21 +77,23 @@ async function getFile(req, res) {
         },
     };
     if (req.query.$options) {
+        let options = {};
         try {
             // 支持 `#${encodeURIComponent(JSON.stringify({arg1: "1"}))}`
-            $options = JSON.parse(decodeURIComponent(req.query.$options));
+            options = JSON.parse(decodeURIComponent(req.query.$options));
         } catch (e) {
             for (const pair of req.query.$options.split('&')) {
                 const key = pair.split('=')[0];
                 const value = pair.split('=')[1];
                 // 部分兼容之前的逻辑 const value = pair.split('=')[1] || true;
-                $options[key] =
+                options[key] =
                     value == null || value === ''
                         ? true
                         : decodeURIComponent(value);
             }
         }
-        $.info(`传入 $options: ${JSON.stringify($options)}`);
+        $.info(`传入 $options: ${JSON.stringify(options)}`);
+        Object.assign($options, options);
     }
     if (url) {
         $.info(`指定远程文件 URL: ${url}`);
@@ -154,10 +156,22 @@ async function getFile(req, res) {
                         proxy || file.proxy,
                     );
                     if (flowInfo) {
-                        res.set(
-                            'subscription-userinfo',
-                            normalizeFlowHeader(flowInfo),
-                        );
+                        const headers = normalizeFlowHeader(flowInfo, true);
+                        if (headers?.['subscription-userinfo']) {
+                            res.set(
+                                'subscription-userinfo',
+                                headers['subscription-userinfo'],
+                            );
+                        }
+                        if (headers?.['profile-web-page-url']) {
+                            res.set(
+                                'profile-web-page-url',
+                                headers['profile-web-page-url'],
+                            );
+                        }
+                        if (headers?.['plan-name']) {
+                            res.set('plan-name', headers['plan-name']);
+                        }
                     }
                 }
             } catch (err) {
