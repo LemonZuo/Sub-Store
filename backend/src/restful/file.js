@@ -49,7 +49,7 @@ function createFile(req, res) {
     success(res, file, 201);
 }
 
-async function getFile(req, res) {
+async function getFile(req, res, next) {
     let { name } = req.params;
     const reqUA = req.headers['user-agent'] || req.headers['User-Agent'];
     $.info(`正在下载文件：${name}\n请求 User-Agent: ${reqUA}`);
@@ -193,7 +193,11 @@ async function getFile(req, res) {
             if (output?.$options?._res?.headers) {
                 Object.entries(output.$options._res.headers).forEach(
                     ([key, value]) => {
-                        res.set(key, value);
+                        if (value == null) {
+                            res.removeHeader(key);
+                        } else {
+                            res.set(key, value);
+                        }
                     },
                 );
             }
@@ -267,6 +271,7 @@ function updateFile(req, res) {
     const allFiles = $.read(FILES_KEY);
     const oldFile = findByName(allFiles, name);
     if (oldFile) {
+        if (!file.name) file.name = oldFile.name;
         const newFile = {
             ...oldFile,
             ...file,
