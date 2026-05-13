@@ -22,6 +22,42 @@ const clashPreprocessor = PROXY_PREPROCESSORS.find(
 
 const tasks = new Map();
 
+function buildDownloadRegex(pattern = '') {
+    const trimmed = `${pattern}`.trim();
+    if (!trimmed) return null;
+    return new RegExp(trimmed, 'i');
+}
+
+function maybePrefixGithubProxyUrl(url, githubProxy, githubProxyRegex) {
+    if (!githubProxy || !githubProxyRegex || typeof url !== 'string') {
+        return url;
+    }
+
+    if (!/^https?:\/\//i.test(url)) {
+        return url;
+    }
+
+    const prefix = `${githubProxy}/`;
+    if (url.startsWith(prefix)) {
+        return url;
+    }
+
+    let regex;
+    try {
+        regex = buildDownloadRegex(githubProxyRegex);
+    } catch (e) {
+        $.error(`GitHub 加速代理匹配正则无效: ${e.message ?? e}`);
+        return url;
+    }
+
+    if (!regex?.test(url)) {
+        return url;
+    }
+
+    $.info(`GitHub 加速代理命中下载链接: ${url}`);
+    return `${githubProxy}/${url}`;
+}
+
 export default async function download(
     rawUrl = '',
     ua,
@@ -54,6 +90,8 @@ export default async function download(
     }
     const { isNode, isStash, isLoon, isShadowRocket, isQX } = ENV();
     const {
+        githubProxy,
+        githubProxyRegex,
         defaultProxy,
         defaultUserAgent,
         defaultTimeout,
@@ -64,9 +102,33 @@ export default async function download(
     if ($.env.isNode) {
         proxy = proxy || eval('process.env.SUB_STORE_BACKEND_DEFAULT_PROXY');
     }
-    const userAgent = ua || defaultUserAgent || 'clash.meta';
+    const userAgent = ua || defaultUserAgent || 'clash.meta/v1.19.23';
+    let customHeaders;
+    if ($arguments?.headers) {
+        try {
+            const parsed = JSON.parse($arguments?.headers);
+            if (
+                parsed &&
+                typeof parsed === 'object' &&
+                !Array.isArray(parsed) &&
+                Object.keys(parsed).length > 0
+            ) {
+                const lowerCaseHeaders = { 'user-agent': userAgent };
+                for (const key in parsed) {
+                    lowerCaseHeaders[key.toLowerCase()] = parsed[key];
+                }
+                customHeaders = lowerCaseHeaders;
+            }
+        } catch (e) {
+            $.error(`解析自定义 headers 失败: ${e}`);
+        }
+    }
+
     const requestTimeout = timeout || defaultTimeout || 8000;
-    const id = hex_md5(userAgent + url);
+    url = maybePrefixGithubProxyUrl(url, githubProxy, githubProxyRegex);
+    const id = hex_md5(
+        `${customHeaders ? JSON.stringify(customHeaders) : userAgent}${url}`,
+    );
 
     if ($arguments?.cacheKey === true) {
         $.error(`使用自定义缓存时 cacheKey 的值不能为空`);
@@ -188,7 +250,7 @@ export default async function download(
 
     const http = HTTP({
         headers: {
-            'User-Agent': userAgent,
+            ...(customHeaders || { 'User-Agent': userAgent }),
             ...(isStash && proxy
                 ? { 'X-Stash-Selected-Proxy': encodeURIComponent(proxy) }
                 : {}),
@@ -202,7 +264,11 @@ export default async function download(
     // try to find in app cache
     const cached = resourceCache.get(id);
     if (!noCache && !$arguments?.noCache && cached) {
-        $.info(`使用缓存: ${url}, ${userAgent}`);
+        $.info(
+            `使用缓存: ${url}, ${
+                customHeaders ? JSON.stringify(customHeaders) : userAgent
+            }`,
+        );
         result = cached;
         if (customCacheKey) {
             $.info(`URL ${url}\n写入自定义缓存 ${$arguments?.cacheKey}`);
@@ -215,7 +281,11 @@ export default async function download(
                 : { insecure: true }
             : undefined;
         $.info(
-            `Downloading...\nUser-Agent: ${userAgent}\nTimeout: ${requestTimeout}\nProxy: ${proxy}\nInsecure: ${!!insecure}\nPreprocess: ${preprocess}\nURL: ${url}`,
+            `Downloading...\n${
+                customHeaders
+                    ? JSON.stringify(customHeaders)
+                    : `User-Agent: ${userAgent}`
+            }\nTimeout: ${requestTimeout}\nProxy: ${proxy}\nInsecure: ${!!insecure}\nPreprocess: ${preprocess}\nURL: ${url}`,
         );
         try {
             let { body, headers, statusCode } = await http.get({
@@ -234,7 +304,13 @@ export default async function download(
             if (headers) {
                 const flowInfo = getFlowField(headers);
                 if (flowInfo) {
-                    headersResourceCache.set(id, flowInfo);
+                    headersResourceCache.set(
+                        id,
+                        flowInfo,
+                        $arguments?.headersCacheTtl
+                            ? $arguments?.headersCacheTtl * 1000
+                            : undefined,
+                    );
                 }
             }
             if (body.replace(/\s/g, '').length === 0)
@@ -275,7 +351,14 @@ export default async function download(
                 }
             }
             if (shouldCache) {
-                resourceCache.set(id, body);
+                // console.log($arguments);
+                resourceCache.set(
+                    id,
+                    body,
+                    $arguments?.cacheTtl
+                        ? $arguments?.cacheTtl * 1000
+                        : undefined,
+                );
                 if (customCacheKey) {
                     $.info(
                         `URL ${url}\n写入自定义缓存 ${$arguments?.cacheKey}`,
@@ -312,6 +395,7 @@ export default async function download(
                     undefined,
                     proxy,
                     $arguments.flowUrl,
+                    $arguments.flowHeaders,
                 ),
             ),
         );

@@ -136,3 +136,9 @@ backend/dist/*
 backend/sub-store.min.js
 
 CHANGELOG.md
+
+.codeartsdoer
+.github/copilot-instructions.md
+CODEMAP.md
+CONTEXT_BUNDLE.md
+mydocs

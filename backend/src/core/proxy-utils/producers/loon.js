@@ -2,6 +2,7 @@
 const targetPlatform = 'Loon';
 import { isPresent, Result } from './utils';
 import { isIPv4, isIPv6 } from '@/utils';
+import $ from '@/core/app';
 
 const ipVersions = {
     dual: 'dual',
@@ -40,6 +41,19 @@ export default function Loon_Producer() {
                 return wireguard(proxy);
             case 'hysteria2':
                 return hysteria2(proxy);
+        }
+        if (proxy.type === 'anytls') {
+            if (
+                proxy.network &&
+                (!['tcp'].includes(proxy.network) ||
+                    (['tcp'].includes(proxy.network) && proxy['reality-opts']))
+            ) {
+                throw new Error(
+                    `Platform ${targetPlatform} does not support proxy type ${proxy.type} with network or REALITY`,
+                );
+            }
+
+            return anytls(proxy);
         }
         throw new Error(
             `Platform ${targetPlatform} does not support proxy type: ${proxy.type}`,
@@ -142,6 +156,23 @@ function shadowsocks(proxy) {
             result.appendIfPresent(
                 `,udp-port=${proxy['udp-port']}`,
                 'udp-port',
+            );
+        }
+    }
+
+    // udp over tcp
+    if (proxy['udp-over-tcp']) {
+        if (proxy['udp-over-tcp-version'] === 2) {
+            if (proxy.plugin === 'obfs') {
+                $.error(
+                    `Platform ${targetPlatform} shadowsocks udp-over-tcp does not support obfs`,
+                );
+            } else {
+                result.append(`,udp-over-tcp=true`);
+            }
+        } else {
+            $.error(
+                `Platform ${targetPlatform} shadowsocks only supports udp-over-tcp-version 2`,
             );
         }
     }
@@ -266,6 +297,61 @@ function trojan(proxy) {
             );
         } else {
             throw new Error(`network ${proxy.network} is unsupported`);
+        }
+    }
+
+    // tls verification
+    result.appendIfPresent(
+        `,skip-cert-verify=${proxy['skip-cert-verify']}`,
+        'skip-cert-verify',
+    );
+
+    // sni
+    result.appendIfPresent(`,tls-name=${proxy.sni}`, 'sni');
+    result.appendIfPresent(
+        `,tls-cert-sha256=${proxy['tls-fingerprint']}`,
+        'tls-fingerprint',
+    );
+    result.appendIfPresent(
+        `,tls-pubkey-sha256=${proxy['tls-pubkey-sha256']}`,
+        'tls-pubkey-sha256',
+    );
+
+    // tfo
+    result.appendIfPresent(`,fast-open=${proxy.tfo}`, 'tfo');
+
+    // block-quic
+    if (proxy['block-quic'] === 'on') {
+        result.append(',block-quic=true');
+    } else if (proxy['block-quic'] === 'off') {
+        result.append(',block-quic=false');
+    }
+
+    // udp
+    if (proxy.udp) {
+        result.append(`,udp=true`);
+    }
+    const ip_version = ipVersions[proxy['ip-version']] || proxy['ip-version'];
+    result.appendIfPresent(`,ip-mode=${ip_version}`, 'ip-version');
+
+    return result.toString();
+}
+
+function anytls(proxy) {
+    const result = new Result(proxy);
+    result.append(
+        `${proxy.name}=anytls,${proxy.server},${proxy.port},"${proxy.password}"`,
+    );
+    // 新版删除idle-session-check-interval和min-idle-session 参数，session 改为主动超时机制，由于 anytls-go 不支持一个tcp 并发多个 stream，max-stream-cout 设置大于 1 时会有阻塞，如果有其他支持多路复用的 anytls 服务器实现，可以设置max-stream-cout 大于 1
+    for (const key of [
+        // 'idle-session-check-interval',
+        'idle-session-timeout',
+        // 'min-idle-session',
+        'max-stream-count',
+    ]) {
+        // 值为整数 才附加
+        if (isPresent(proxy, key) && Number.isInteger(proxy[key])) {
+            result.append(`,${key}=${proxy[key]}`);
         }
     }
 

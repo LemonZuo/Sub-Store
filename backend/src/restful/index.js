@@ -13,6 +13,7 @@ import registerCollectionRoutes from './collections';
 import registerArtifactRoutes from './artifacts';
 import registerFileRoutes from './file';
 import registerTokenRoutes from './token';
+import registerArchiveRoutes from './archives';
 import registerModuleRoutes from './module';
 import registerSyncRoutes from './sync';
 import registerDownloadRoutes from './download';
@@ -22,6 +23,7 @@ import registerSortingRoutes from './sort';
 import registerMiscRoutes from './miscs';
 import registerNodeInfoRoutes from './node-info';
 import registerParserRoutes from './parser';
+import registerLogRoutes from './logs';
 
 export default function serve() {
     let port;
@@ -132,11 +134,13 @@ export default function serve() {
     registerArtifactRoutes($app);
     registerFileRoutes($app);
     registerTokenRoutes($app);
+    registerArchiveRoutes($app);
     registerModuleRoutes($app);
     registerSyncRoutes($app);
     registerNodeInfoRoutes($app);
     registerMiscRoutes($app);
     registerParserRoutes($app);
+    registerLogRoutes($app);
 
     $app.start();
 
@@ -470,7 +474,7 @@ export default function serve() {
                 .then(async (content) => {
                     try {
                         content = JSON.parse(Base64.decode(content));
-                        if (Object.keys(content.settings).length === 0) {
+                        if (!(Object.keys(content.settings).length >= 0)) {
                             throw new Error(
                                 '备份文件应该至少包含 settings 字段',
                             );
@@ -478,7 +482,7 @@ export default function serve() {
                     } catch (err) {
                         try {
                             content = JSON.parse(content);
-                            if (Object.keys(content.settings).length === 0) {
+                            if (!(Object.keys(content.settings).length >= 0)) {
                                 throw new Error(
                                     '备份文件应该至少包含 settings 字段',
                                 );

@@ -1,6 +1,6 @@
 import resourceCache from '@/utils/resource-cache';
 import scriptResourceCache from '@/utils/script-resource-cache';
-import { isIPv4, isIPv6, ipAddress } from '@/utils';
+import { isIPv4, isIPv6, ipAddress, isPlainObject } from '@/utils';
 import { FULL } from '@/utils/logical';
 import { getFlag, removeFlag } from '@/utils/geo';
 import { doh } from '@/utils/dns';
@@ -23,9 +23,6 @@ import {
     normalizeFlowHeader,
 } from '@/utils/flow';
 
-function isObject(item) {
-    return item && typeof item === 'object' && !Array.isArray(item);
-}
 function trimWrap(str) {
     if (str.startsWith('<') && str.endsWith('>')) {
         return str.slice(1, -1);
@@ -35,7 +32,10 @@ function trimWrap(str) {
 function deepMerge(target, _other) {
     const other = typeof _other === 'string' ? JSON.parse(_other) : _other;
     for (const key in other) {
-        if (isObject(other[key])) {
+        // Only recurse into JSON-like patch objects. YAML can surface non-plain
+        // objects (for example timestamps), and those should be assigned as
+        // values instead of being treated as nested config maps.
+        if (isPlainObject(other[key])) {
             if (key.endsWith('!')) {
                 const k = trimWrap(key.slice(0, -1));
                 target[k] = other[key];
@@ -196,12 +196,13 @@ function FlagOperator({ mode, tw }) {
 
 // duplicate handler
 function HandleDuplicateOperator(arg) {
-    const { action, template, link, position } = {
+    const { action, template, link, position, field } = {
         ...{
             action: 'rename',
             template: '0 1 2 3 4 5 6 7 8 9',
             link: '-',
             position: 'back',
+            field: ['name'],
         },
         ...arg,
     };
@@ -211,10 +212,13 @@ function HandleDuplicateOperator(arg) {
             if (action === 'delete') {
                 const chosen = {};
                 return proxies.filter((p) => {
-                    if (chosen[p.name]) {
+                    const key = field
+                        .map((f) => lodash.get(p, f, '-'))
+                        .join('_');
+                    if (chosen[key]) {
                         return false;
                     }
-                    chosen[p.name] = true;
+                    chosen[key] = true;
                     return true;
                 });
             } else if (action === 'rename') {
@@ -223,21 +227,23 @@ function HandleDuplicateOperator(arg) {
                 const counter = {};
                 let maxLen = 0;
                 proxies.forEach((p) => {
-                    if (typeof counter[p.name] === 'undefined')
-                        counter[p.name] = 1;
-                    else counter[p.name]++;
-                    maxLen = Math.max(
-                        counter[p.name].toString().length,
-                        maxLen,
-                    );
+                    const key = field
+                        .map((f) => lodash.get(p, f, '-'))
+                        .join('_');
+                    if (typeof counter[key] === 'undefined') counter[key] = 1;
+                    else counter[key]++;
+                    maxLen = Math.max(counter[key].toString().length, maxLen);
                 });
                 const increment = {};
                 return proxies.map((p) => {
-                    if (counter[p.name] > 1) {
-                        if (typeof increment[p.name] == 'undefined')
-                            increment[p.name] = 1;
+                    const key = field
+                        .map((f) => lodash.get(p, f, '-'))
+                        .join('_');
+                    if (counter[key] > 1) {
+                        if (typeof increment[key] == 'undefined')
+                            increment[key] = 1;
                         let num = '';
-                        let cnt = increment[p.name]++;
+                        let cnt = increment[key]++;
                         let numDigits = 0;
                         while (cnt > 0) {
                             num = numbers[cnt % 10] + num;
@@ -1165,6 +1171,7 @@ function createDynamicFunction(name, script, $arguments, $options) {
             'Buffer',
             'b64d',
             'b64e',
+            'DOMAIN_RESOLVERS',
             'scriptResourceCache',
             'flowUtils',
             'produceArtifact',
@@ -1186,6 +1193,7 @@ function createDynamicFunction(name, script, $arguments, $options) {
             ProxyUtils.Buffer,
             ProxyUtils.Base64.decode,
             ProxyUtils.Base64.encode,
+            DOMAIN_RESOLVERS,
             scriptResourceCache,
             flowUtils,
             produceArtifact,
@@ -1202,6 +1210,7 @@ function createDynamicFunction(name, script, $arguments, $options) {
             'Buffer',
             'b64d',
             'b64e',
+            'DOMAIN_RESOLVERS',
             'scriptResourceCache',
             'flowUtils',
             'produceArtifact',
@@ -1217,6 +1226,7 @@ function createDynamicFunction(name, script, $arguments, $options) {
             ProxyUtils.Buffer,
             ProxyUtils.Base64.decode,
             ProxyUtils.Base64.encode,
+            DOMAIN_RESOLVERS,
             scriptResourceCache,
             flowUtils,
             produceArtifact,

@@ -1,4 +1,4 @@
-import * as peggy from 'peggy';
+import peggy from 'peggy';
 const grammars = String.raw`
 // global initializer
 {{
@@ -35,7 +35,7 @@ const grammars = String.raw`
     }
 }
 
-start = (shadowsocksr/shadowsocks/vmess/vless/trojan/https/http/socks5/hysteria2) {
+start = (shadowsocksr/shadowsocks/vmess/vless/trojan/https/http/socks5/hysteria2/anytls) {
     return proxy;
 }
 
@@ -44,7 +44,7 @@ shadowsocksr = tag equals "shadowsocksr"i address method password (ssr_protocol/
     // handle ssr obfs
     proxy.obfs = obfs.type;
 }
-shadowsocks = tag equals "shadowsocks"i address method password (obfs_typev obfs_hostv)? (obfs_ss/obfs_host/obfs_uri/fast_open/udp_relay/udp_port/shadow_tls_version/shadow_tls_sni/shadow_tls_password/ip_mode/block_quic/others)* {
+shadowsocks = tag equals "shadowsocks"i address method password (obfs_typev obfs_hostv)? (obfs_ss/obfs_host/obfs_uri/fast_open/udp_relay/udp_port/shadow_tls_version/shadow_tls_sni/shadow_tls_password/ip_mode/block_quic/udp_over_tcp/others)* {
     proxy.type = "ss";
     // handle ss obfs
     if (obfs.type == "http" || obfs.type === "tls") {
@@ -66,6 +66,10 @@ vless = tag equals "vless"i address uuid (transport/transport_host/transport_pat
 }
 trojan = tag equals "trojan"i address password (transport/transport_host/transport_path/over_tls/tls_name/sni/tls_verification/tls_cert_sha256/tls_pubkey_sha256/fast_open/udp_relay/ip_mode/block_quic/others)* {
     proxy.type = "trojan";
+    handleTransport();
+}
+anytls = tag equals "anytls"i address password (transport/transport_host/transport_path/over_tls/tls_name/sni/tls_verification/tls_cert_sha256/tls_pubkey_sha256/fast_open/udp_relay/ip_mode/block_quic/idle_session_check_interval/idle_session_timeout/min_idle_session/max_stream_count/others)* {
+    proxy.type = "anytls";
     handleTransport();
 }
 hysteria2 = tag equals "hysteria2"i address password (tls_name/sni/tls_verification/tls_cert_sha256/tls_pubkey_sha256/udp_relay/fast_open/download_bandwidth/salamander_password/ecn/ip_mode/block_quic/others)* {
@@ -156,12 +160,12 @@ obfs_ss = comma "obfs-name" equals type:("http"/"tls") { obfs.type = type; }
 obfs_ssr = comma "obfs" equals type:("plain"/"http_simple"/"http_post"/"random_head"/"tls1.2_ticket_auth"/"tls1.2_ticket_fastauth") { obfs.type = type; }
 obfs_ssr_param = comma "obfs-param" equals match:$[^,]+ { proxy["obfs-param"] = match; }
 
-obfs_host = comma "obfs-host" equals host:domain { obfs.host = host; }
+obfs_host = comma "obfs-host" equals match:[^,]+ { obfs.host = match.join("").replace(/^"(.*)"$/, '$1'); }
 obfs_uri = comma "obfs-uri" equals uri:uri { obfs.path = uri; }
 uri = $[^,]+
 
 transport = comma "transport" equals type:("tcp"/"ws"/"http") { transport.type = type; }
-transport_host = comma "host" equals host:domain { transport.host = host; }
+transport_host = comma "host" equals match:[^,]+ { transport.host = match.join("").replace(/^"(.*)"$/, '$1'); }
 transport_path = comma "path" equals path:uri { transport.path = path; }
 
 ssr_protocol = comma "protocol" equals protocol:("origin"/"auth_sha1_v4"/"auth_aes128_md5"/"auth_aes128_sha1"/"auth_chain_a"/"auth_chain_b") { proxy.protocol = protocol; }
@@ -175,8 +179,8 @@ shadow_tls_sni = comma "shadow-tls-sni" equals match:[^,]+ { proxy["shadow-tls-s
 shadow_tls_password = comma "shadow-tls-password" equals match:[^,]+ { proxy["shadow-tls-password"] = match.join(""); }
 
 over_tls = comma "over-tls" equals flag:bool { proxy.tls = flag; }
-tls_name = comma sni:("tls-name") equals host:domain { proxy.sni = host; }
-sni = comma sni:("sni") equals host:domain { proxy.sni = host; }
+tls_name = comma sni:("tls-name") equals match:[^,]+ { proxy.sni = match.join("").replace(/^"(.*)"$/, '$1'); }
+sni = comma "sni" equals match:[^,]+ { proxy.sni = match.join("").replace(/^"(.*)"$/, '$1'); }
 tls_verification = comma "skip-cert-verify" equals flag:bool { proxy["skip-cert-verify"] = flag; }
 tls_cert_sha256 = comma "tls-cert-sha256" equals match:[^,]+ { proxy["tls-fingerprint"] = match.join("").replace(/^"(.*)"$/, '$1'); }
 tls_pubkey_sha256 = comma "tls-pubkey-sha256" equals match:[^,]+ { proxy["tls-pubkey-sha256"] = match.join("").replace(/^"(.*)"$/, '$1'); }
@@ -194,6 +198,13 @@ download_bandwidth = comma "download-bandwidth" equals match:[^,]+ { proxy.down 
 salamander_password = comma "salamander-password" equals match:[^,]+ { proxy['obfs-password'] = match.join(""); proxy.obfs = 'salamander'; }
 
 block_quic = comma "block-quic" equals flag:bool { if(flag) proxy["block-quic"] = "on"; else proxy["block-quic"] = "off"; }
+
+idle_session_check_interval = comma "idle-session-check-interval" equals match:$[0-9]+ { proxy["idle-session-check-interval"] = parseInt(match.trim()); }
+idle_session_timeout = comma "idle-session-timeout" equals match:$[0-9]+ { proxy["idle-session-timeout"] = parseInt(match.trim()); }
+min_idle_session = comma "min-idle-session" equals match:$[0-9]+ { proxy["min-idle-session"] = parseInt(match.trim()); }
+max_stream_count = comma "max-stream-count" equals match:$[0-9]+ { proxy["max-stream-count"] = parseInt(match.trim()); }
+
+udp_over_tcp = comma "udp-over-tcp" equals flag:bool { proxy["udp-over-tcp"] = true; proxy["udp-over-tcp-version"] = 2; }
 
 tag = match:[^=,]* { proxy.name = match.join("").trim(); }
 comma = _ "," _

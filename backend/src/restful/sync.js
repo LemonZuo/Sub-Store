@@ -5,6 +5,7 @@ import {
     RULES_KEY,
     SUBS_KEY,
     FILES_KEY,
+    SETTINGS_KEY,
 } from '@/constants';
 import { failed, success } from '@/restful/response';
 import { InternalServerError, ResourceNotFoundError } from '@/restful/errors';
@@ -12,7 +13,18 @@ import { findByName } from '@/utils/database';
 import download from '@/utils/download';
 import { ProxyUtils } from '@/core/proxy-utils';
 import { RuleUtils } from '@/core/rule-utils';
-import { syncToGist } from '@/restful/artifacts';
+import {
+    normalizeArtifactSyncBatchSize,
+    syncToGist,
+} from '@/restful/artifacts';
+import {
+    buildEmptySubscriptionOutput,
+    handleIgnoreFailedRemoteSubError,
+    notifyIgnoreFailedRemoteSubFallback,
+    resolveIgnoreFailedRemoteSubMode,
+    shouldFallbackIgnoreFailedRemoteSub,
+} from '@/restful/ignore-failed-remote-sub';
+import { normalizeClashYaml } from '@/core/proxy-utils/preprocessors';
 
 export default function register($app) {
     // Initialization
@@ -55,167 +67,197 @@ async function produceArtifact({
         } else {
             throw new Error('未提供订阅名称或订阅数据');
         }
-        let raw;
-        if (content && !['localFirst', 'remoteFirst'].includes(mergeSources)) {
-            raw = content;
-        } else if (url) {
-            const errors = {};
-            raw = await Promise.all(
-                url
-                    .split(/[\r\n]+/)
-                    .map((i) => i.trim())
-                    .filter((i) => i.length)
-                    .map(async (url) => {
-                        try {
-                            return await download(
-                                url,
-                                ua || sub.ua,
-                                undefined,
-                                proxy || sub.proxy,
-                                undefined,
-                                awaitCustomCache,
-                                noCache || sub.noCache,
-                                true,
-                            );
-                        } catch (err) {
-                            errors[url] = err;
-                            $.error(
-                                `订阅 ${sub.name} 的远程订阅 ${url} 发生错误: ${err}`,
-                            );
-                            return '';
-                        }
-                    }),
-            );
-            let subIgnoreFailedRemoteSub = sub.ignoreFailedRemoteSub;
-            if (ignoreFailedRemoteSub != null && ignoreFailedRemoteSub !== '') {
-                subIgnoreFailedRemoteSub = ignoreFailedRemoteSub;
-            }
-
-            if (Object.keys(errors).length > 0) {
-                if (!subIgnoreFailedRemoteSub) {
-                    throw new Error(
-                        `订阅 ${sub.name} 的远程订阅 ${Object.keys(errors).join(
-                            ', ',
-                        )} 发生错误, 请查看日志`,
-                    );
-                } else if (subIgnoreFailedRemoteSub === 'enabled') {
-                    $.notify(
-                        `🌍 Sub-Store 处理订阅失败`,
-                        `❌ ${sub.name}`,
-                        `远程订阅 ${Object.keys(errors).join(
-                            ', ',
-                        )} 发生错误, 请查看日志`,
-                    );
-                }
-            }
-            if (mergeSources === 'localFirst') {
-                raw.unshift(content);
-            } else if (mergeSources === 'remoteFirst') {
-                raw.push(content);
-            }
-        } else if (
-            sub.source === 'local' &&
-            !['localFirst', 'remoteFirst'].includes(sub.mergeSources)
-        ) {
-            raw = sub.content;
-        } else {
-            const errors = {};
-            raw = await Promise.all(
-                sub.url
-                    .split(/[\r\n]+/)
-                    .map((i) => i.trim())
-                    .filter((i) => i.length)
-                    .map(async (url) => {
-                        try {
-                            return await download(
-                                url,
-                                ua || sub.ua,
-                                undefined,
-                                proxy || sub.proxy,
-                                undefined,
-                                awaitCustomCache,
-                                noCache || sub.noCache,
-                                true,
-                            );
-                        } catch (err) {
-                            errors[url] = err;
-                            $.error(
-                                `订阅 ${sub.name} 的远程订阅 ${url} 发生错误: ${err}`,
-                            );
-                            return '';
-                        }
-                    }),
-            );
-            let subIgnoreFailedRemoteSub = sub.ignoreFailedRemoteSub;
-            if (ignoreFailedRemoteSub != null && ignoreFailedRemoteSub !== '') {
-                subIgnoreFailedRemoteSub = ignoreFailedRemoteSub;
-            }
-
-            if (Object.keys(errors).length > 0) {
-                if (!subIgnoreFailedRemoteSub) {
-                    throw new Error(
-                        `订阅 ${sub.name} 的远程订阅 ${Object.keys(errors).join(
-                            ', ',
-                        )} 发生错误, 请查看日志`,
-                    );
-                } else if (subIgnoreFailedRemoteSub === 'enabled') {
-                    $.notify(
-                        `🌍 Sub-Store 处理订阅失败`,
-                        `❌ ${sub.name}`,
-                        `远程订阅 ${Object.keys(errors).join(
-                            ', ',
-                        )} 发生错误, 请查看日志`,
-                    );
-                }
-            }
-            if (sub.mergeSources === 'localFirst') {
-                raw.unshift(sub.content);
-            } else if (sub.mergeSources === 'remoteFirst') {
-                raw.push(sub.content);
-            }
-        }
-        if (produceType === 'raw') {
-            return JSON.stringify((Array.isArray(raw) ? raw : [raw]).flat());
-        }
-        // parse proxies
-        let proxies = (Array.isArray(raw) ? raw : [raw])
-            .map((i) => ProxyUtils.parse(i))
-            .flat();
-
-        proxies.forEach((proxy) => {
-            proxy._subName = sub.name;
-            proxy._subDisplayName = sub.displayName;
-        });
-        // apply processors
-        proxies = await ProxyUtils.process(
-            proxies,
-            sub.process || [],
-            platform,
-            { [sub.name]: sub },
-            $options,
+        const subIgnoreFailedRemoteSub = resolveIgnoreFailedRemoteSubMode(
+            ignoreFailedRemoteSub,
+            sub.ignoreFailedRemoteSub,
         );
-        if (proxies.length === 0) {
-            throw new Error(`订阅 ${name} 中不含有效节点`);
-        }
-        // check duplicate
-        const exist = {};
-        for (const proxy of proxies) {
-            if (exist[proxy.name]) {
-                $.notify(
-                    '🌍 Sub-Store',
-                    `⚠️ 订阅 ${name} 包含重复节点 ${proxy.name}！`,
-                    '请仔细检测配置！',
-                    {
-                        'media-url':
-                            'https://cdn3.iconfinder.com/data/icons/seo-outline-1/512/25_code_program_programming_develop_bug_search_developer-512.png',
-                    },
+
+        try {
+            let raw;
+            if (
+                content &&
+                !['localFirst', 'remoteFirst'].includes(mergeSources)
+            ) {
+                raw = content;
+            } else if (url) {
+                const errors = {};
+                raw = await Promise.all(
+                    url
+                        .split(/[\r\n]+/)
+                        .map((i) => i.trim())
+                        .filter((i) => i.length)
+                        .map(async (url) => {
+                            try {
+                                return await download(
+                                    url,
+                                    ua || sub.ua,
+                                    undefined,
+                                    proxy || sub.proxy,
+                                    undefined,
+                                    awaitCustomCache,
+                                    noCache || sub.noCache,
+                                    true,
+                                );
+                            } catch (err) {
+                                errors[url] = err;
+                                $.error(
+                                    `订阅 ${sub.name} 的远程订阅 ${url} 发生错误: ${err}`,
+                                );
+                                return '';
+                            }
+                        }),
                 );
-                break;
+
+                if (Object.keys(errors).length > 0) {
+                    const message = `订阅 ${sub.name} 的远程订阅 ${Object.keys(
+                        errors,
+                    ).join(', ')} 发生错误, 请查看日志`;
+                    handleIgnoreFailedRemoteSubError({
+                        mode: subIgnoreFailedRemoteSub,
+                        message,
+                        notify: () => {
+                            $.notify(
+                                `🌍 Sub-Store 处理订阅失败`,
+                                `❌ ${sub.name}`,
+                                message,
+                            );
+                        },
+                    });
+                }
+                if (mergeSources === 'localFirst') {
+                    raw.unshift(content);
+                } else if (mergeSources === 'remoteFirst') {
+                    raw.push(content);
+                }
+            } else if (
+                sub.source === 'local' &&
+                !['localFirst', 'remoteFirst'].includes(sub.mergeSources)
+            ) {
+                raw = sub.content;
+            } else {
+                const errors = {};
+                raw = await Promise.all(
+                    sub.url
+                        .split(/[\r\n]+/)
+                        .map((i) => i.trim())
+                        .filter((i) => i.length)
+                        .map(async (url) => {
+                            try {
+                                return await download(
+                                    url,
+                                    ua || sub.ua,
+                                    undefined,
+                                    proxy || sub.proxy,
+                                    undefined,
+                                    awaitCustomCache,
+                                    noCache || sub.noCache,
+                                    true,
+                                );
+                            } catch (err) {
+                                errors[url] = err;
+                                $.error(
+                                    `订阅 ${sub.name} 的远程订阅 ${url} 发生错误: ${err}`,
+                                );
+                                return '';
+                            }
+                        }),
+                );
+
+                if (Object.keys(errors).length > 0) {
+                    const message = `订阅 ${sub.name} 的远程订阅 ${Object.keys(
+                        errors,
+                    ).join(', ')} 发生错误, 请查看日志`;
+                    handleIgnoreFailedRemoteSubError({
+                        mode: subIgnoreFailedRemoteSub,
+                        message,
+                        notify: () => {
+                            $.notify(
+                                `🌍 Sub-Store 处理订阅失败`,
+                                `❌ ${sub.name}`,
+                                message,
+                            );
+                        },
+                    });
+                }
+                if (sub.mergeSources === 'localFirst') {
+                    raw.unshift(sub.content);
+                } else if (sub.mergeSources === 'remoteFirst') {
+                    raw.push(sub.content);
+                }
             }
-            exist[proxy.name] = true;
+            if (produceType === 'raw') {
+                return JSON.stringify((Array.isArray(raw) ? raw : [raw]).flat());
+            }
+            // parse proxies
+            let proxies = (Array.isArray(raw) ? raw : [raw])
+                .map((i) => ProxyUtils.parse(i))
+                .flat();
+
+            proxies.forEach((proxy) => {
+                proxy._subName = sub.name;
+                proxy._subDisplayName = sub.displayName;
+            });
+            // apply processors
+            proxies = await ProxyUtils.process(
+                proxies,
+                sub.process || [],
+                platform,
+                { [sub.name]: sub },
+                $options,
+            );
+            if (proxies.length === 0) {
+                throw new Error(`订阅 ${name} 中不含有效节点`);
+            }
+            // check duplicate
+            const exist = {};
+            for (const proxy of proxies) {
+                if (exist[proxy.name]) {
+                    $.notify(
+                        '🌍 Sub-Store',
+                        `⚠️ 订阅 ${name} 包含重复节点 ${proxy.name}！`,
+                        '请仔细检测配置！',
+                        {
+                            'media-url':
+                                'https://cdn3.iconfinder.com/data/icons/seo-outline-1/512/25_code_program_programming_develop_bug_search_developer-512.png',
+                        },
+                    );
+                    break;
+                }
+                exist[proxy.name] = true;
+            }
+            // produce
+            return ProxyUtils.produce(
+                proxies,
+                platform,
+                produceType,
+                produceOpts,
+            );
+        } catch (err) {
+            if (!shouldFallbackIgnoreFailedRemoteSub(subIgnoreFailedRemoteSub)) {
+                throw err;
+            }
+
+            notifyIgnoreFailedRemoteSubFallback({
+                mode: subIgnoreFailedRemoteSub,
+                error: err,
+                notify: (error) => {
+                    $.notify(
+                        `🌍 Sub-Store 处理订阅失败`,
+                        `❌ ${sub.name}`,
+                        `🤔 原因：${error.message ?? error}`,
+                    );
+                },
+            });
+            $.error(
+                `订阅 ${sub.name} 启用兜底后返回空结果: ${err.message ?? err}`,
+            );
+
+            return buildEmptySubscriptionOutput({
+                platform,
+                produceType,
+                produceOpts,
+            });
         }
-        // produce
-        return ProxyUtils.produce(proxies, platform, produceType, produceOpts);
     } else if (['collection', 'col'].includes(type)) {
         const allSubs = $.read(SUBS_KEY);
         const allCols = $.read(COLLECTIONS_KEY);
@@ -235,193 +277,254 @@ async function produceArtifact({
                 }
             });
         }
-        const results = {};
-        const errors = {};
-        let processed = 0;
+        const collectionIgnoreFailedRemoteSub = resolveIgnoreFailedRemoteSubMode(
+            ignoreFailedRemoteSub,
+            collection.ignoreFailedRemoteSub,
+        );
 
-        await Promise.all(
-            subnames.map(async (name) => {
-                const sub = findByName(allSubs, name);
-                const passThroughUA = sub.passThroughUA;
-                let reqUA = sub.ua;
-                if (passThroughUA) {
-                    $.info(
-                        `订阅开启了透传 User-Agent, 使用请求的 User-Agent: ${ua}`,
+        try {
+            const results = {};
+            const errors = {};
+            let processed = 0;
+
+            await Promise.all(
+                subnames.map(async (name) => {
+                    const sub = findByName(allSubs, name);
+                    const subMode = resolveIgnoreFailedRemoteSubMode(
+                        sub.ignoreFailedRemoteSub,
                     );
-                    reqUA = ua;
-                }
-                try {
-                    $.info(`正在处理子订阅：${sub.name}...`);
-                    let raw;
-                    if (
-                        sub.source === 'local' &&
-                        !['localFirst', 'remoteFirst'].includes(
-                            sub.mergeSources,
-                        )
-                    ) {
-                        raw = sub.content;
-                    } else {
-                        const errors = {};
-                        raw = await await Promise.all(
-                            sub.url
-                                .split(/[\r\n]+/)
-                                .map((i) => i.trim())
-                                .filter((i) => i.length)
-                                .map(async (url) => {
-                                    try {
-                                        return await download(
-                                            url,
-                                            reqUA,
-                                            undefined,
-                                            proxy ||
-                                                sub.proxy ||
-                                                collection.proxy,
-                                            undefined,
-                                            undefined,
-                                            noCache || sub.noCache,
-                                            true,
-                                        );
-                                    } catch (err) {
-                                        errors[url] = err;
-                                        $.error(
-                                            `订阅 ${sub.name} 的远程订阅 ${url} 发生错误: ${err}`,
-                                        );
-                                        return '';
-                                    }
-                                }),
+                    const passThroughUA = sub.passThroughUA;
+                    let reqUA = sub.ua;
+                    if (passThroughUA) {
+                        $.info(
+                            `订阅开启了透传 User-Agent, 使用请求的 User-Agent: ${ua}`,
                         );
+                        reqUA = ua;
+                    }
+                    try {
+                        $.info(`正在处理子订阅：${sub.name}...`);
+                        let raw;
+                        if (
+                            sub.source === 'local' &&
+                            !['localFirst', 'remoteFirst'].includes(
+                                sub.mergeSources,
+                            )
+                        ) {
+                            raw = sub.content;
+                        } else {
+                            const errors = {};
+                            raw = await Promise.all(
+                                sub.url
+                                    .split(/[\r\n]+/)
+                                    .map((i) => i.trim())
+                                    .filter((i) => i.length)
+                                    .map(async (url) => {
+                                        try {
+                                            return await download(
+                                                url,
+                                                reqUA,
+                                                undefined,
+                                                proxy ||
+                                                    sub.proxy ||
+                                                    collection.proxy,
+                                                undefined,
+                                                undefined,
+                                                noCache || sub.noCache,
+                                                true,
+                                            );
+                                        } catch (err) {
+                                            errors[url] = err;
+                                            $.error(
+                                                `订阅 ${sub.name} 的远程订阅 ${url} 发生错误: ${err}`,
+                                            );
+                                            return '';
+                                        }
+                                    }),
+                            );
 
-                        if (Object.keys(errors).length > 0) {
-                            if (!sub.ignoreFailedRemoteSub) {
-                                throw new Error(
-                                    `订阅 ${sub.name} 的远程订阅 ${Object.keys(
-                                        errors,
-                                    ).join(', ')} 发生错误, 请查看日志`,
-                                );
-                            } else if (
-                                sub.ignoreFailedRemoteSub === 'enabled'
-                            ) {
-                                $.notify(
-                                    `🌍 Sub-Store 处理订阅失败`,
-                                    `❌ ${sub.name}`,
-                                    `远程订阅 ${Object.keys(errors).join(
-                                        ', ',
-                                    )} 发生错误, 请查看日志`,
-                                );
+                            if (Object.keys(errors).length > 0) {
+                                const message = `订阅 ${sub.name} 的远程订阅 ${Object.keys(
+                                    errors,
+                                ).join(', ')} 发生错误, 请查看日志`;
+                                handleIgnoreFailedRemoteSubError({
+                                    mode: subMode,
+                                    message,
+                                    notify: () => {
+                                        $.notify(
+                                            `🌍 Sub-Store 处理订阅失败`,
+                                            `❌ ${sub.name}`,
+                                            message,
+                                        );
+                                    },
+                                });
+                            }
+                            if (sub.mergeSources === 'localFirst') {
+                                raw.unshift(sub.content);
+                            } else if (sub.mergeSources === 'remoteFirst') {
+                                raw.push(sub.content);
                             }
                         }
-                        if (sub.mergeSources === 'localFirst') {
-                            raw.unshift(sub.content);
-                        } else if (sub.mergeSources === 'remoteFirst') {
-                            raw.push(sub.content);
+                        // parse proxies
+                        let currentProxies = (Array.isArray(raw) ? raw : [raw])
+                            .map((i) => ProxyUtils.parse(i))
+                            .flat();
+
+                        currentProxies.forEach((proxy) => {
+                            proxy._subName = sub.name;
+                            proxy._subDisplayName = sub.displayName;
+                            proxy._collectionName = collection.name;
+                            proxy._collectionDisplayName =
+                                collection.displayName;
+                        });
+
+                        // apply processors
+                        currentProxies = await ProxyUtils.process(
+                            currentProxies,
+                            sub.process || [],
+                            platform,
+                            {
+                                [sub.name]: sub,
+                                _collection: collection,
+                                $options,
+                            },
+                        );
+                        results[name] = currentProxies;
+                        processed++;
+                        $.info(
+                            `✅ 子订阅：${sub.name}加载成功，进度--${
+                                100 * (processed / subnames.length).toFixed(1)
+                            }% `,
+                        );
+                    } catch (err) {
+                        processed++;
+
+                        if (shouldFallbackIgnoreFailedRemoteSub(subMode)) {
+                            notifyIgnoreFailedRemoteSubFallback({
+                                mode: subMode,
+                                error: err,
+                                notify: (error) => {
+                                    $.notify(
+                                        `🌍 Sub-Store 处理订阅失败`,
+                                        `❌ ${sub.name}`,
+                                        `🤔 原因：${error.message ?? error}`,
+                                    );
+                                },
+                            });
+                            $.error(
+                                `订阅 ${sub.name} 在组合订阅处理中启用兜底后返回空结果: ${
+                                    err.message ?? err
+                                }`,
+                            );
+                            results[name] = [];
+                            return;
                         }
+
+                        errors[name] = err;
+                        $.error(
+                            `❌ 处理组合订阅中的子订阅: ${
+                                sub.name
+                            }时出现错误：${err}！进度--${
+                                100 * (processed / subnames.length).toFixed(1)
+                            }%`,
+                        );
                     }
-                    // parse proxies
-                    let currentProxies = (Array.isArray(raw) ? raw : [raw])
-                        .map((i) => ProxyUtils.parse(i))
-                        .flat();
+                }),
+            );
 
-                    currentProxies.forEach((proxy) => {
-                        proxy._subName = sub.name;
-                        proxy._subDisplayName = sub.displayName;
-                        proxy._collectionName = collection.name;
-                        proxy._collectionDisplayName = collection.displayName;
-                    });
+            if (Object.keys(errors).length > 0) {
+                const message = `组合订阅 ${collection.name} 的子订阅 ${Object.keys(
+                    errors,
+                ).join(', ')} 发生错误, 请查看日志`;
+                handleIgnoreFailedRemoteSubError({
+                    mode: collectionIgnoreFailedRemoteSub,
+                    message,
+                    notify: () => {
+                        $.notify(
+                            `🌍 Sub-Store 处理组合订阅失败`,
+                            `❌ ${collection.name}`,
+                            message,
+                        );
+                    },
+                });
+            }
 
-                    // apply processors
-                    currentProxies = await ProxyUtils.process(
-                        currentProxies,
-                        sub.process || [],
-                        platform,
+            // merge proxies with the original order
+            let proxies = Array.prototype.concat.apply(
+                [],
+                subnames.map((name) => results[name] || []),
+            );
+
+            proxies.forEach((proxy) => {
+                proxy._collectionName = collection.name;
+                proxy._collectionDisplayName = collection.displayName;
+            });
+
+            // apply own processors
+            proxies = await ProxyUtils.process(
+                proxies,
+                collection.process || [],
+                platform,
+                { _collection: collection },
+                $options,
+            );
+            if (proxies.length === 0) {
+                throw new Error(`组合订阅 ${name} 中不含有效节点`);
+            }
+            // check duplicate
+            const exist = {};
+            for (const proxy of proxies) {
+                if (exist[proxy.name]) {
+                    $.notify(
+                        '🌍 Sub-Store',
+                        `⚠️ 组合订阅 ${name} 包含重复节点 ${proxy.name}！`,
+                        '请仔细检测配置！',
                         {
-                            [sub.name]: sub,
-                            _collection: collection,
-                            $options,
+                            'media-url':
+                                'https://cdn3.iconfinder.com/data/icons/seo-outline-1/512/25_code_program_programming_develop_bug_search_developer-512.png',
                         },
                     );
-                    results[name] = currentProxies;
-                    processed++;
-                    $.info(
-                        `✅ 子订阅：${sub.name}加载成功，进度--${
-                            100 * (processed / subnames.length).toFixed(1)
-                        }% `,
-                    );
-                } catch (err) {
-                    processed++;
-                    errors[name] = err;
-                    $.error(
-                        `❌ 处理组合订阅中的子订阅: ${
-                            sub.name
-                        }时出现错误：${err}！进度--${
-                            100 * (processed / subnames.length).toFixed(1)
-                        }%`,
-                    );
+                    break;
                 }
-            }),
-        );
-        let collectionIgnoreFailedRemoteSub = collection.ignoreFailedRemoteSub;
-        if (ignoreFailedRemoteSub != null && ignoreFailedRemoteSub !== '') {
-            collectionIgnoreFailedRemoteSub = ignoreFailedRemoteSub;
-        }
-
-        if (Object.keys(errors).length > 0) {
-            if (!collectionIgnoreFailedRemoteSub) {
-                throw new Error(
-                    `组合订阅 ${collection.name} 的子订阅 ${Object.keys(
-                        errors,
-                    ).join(', ')} 发生错误, 请查看日志`,
-                );
-            } else if (collectionIgnoreFailedRemoteSub === 'enabled') {
-                $.notify(
-                    `🌍 Sub-Store 处理组合订阅失败`,
-                    `❌ ${collection.name}`,
-                    `子订阅 ${Object.keys(errors).join(
-                        ', ',
-                    )} 发生错误, 请查看日志`,
-                );
+                exist[proxy.name] = true;
             }
-        }
-
-        // merge proxies with the original order
-        let proxies = Array.prototype.concat.apply(
-            [],
-            subnames.map((name) => results[name] || []),
-        );
-
-        proxies.forEach((proxy) => {
-            proxy._collectionName = collection.name;
-            proxy._collectionDisplayName = collection.displayName;
-        });
-
-        // apply own processors
-        proxies = await ProxyUtils.process(
-            proxies,
-            collection.process || [],
-            platform,
-            { _collection: collection },
-            $options,
-        );
-        if (proxies.length === 0) {
-            throw new Error(`组合订阅 ${name} 中不含有效节点`);
-        }
-        // check duplicate
-        const exist = {};
-        for (const proxy of proxies) {
-            if (exist[proxy.name]) {
-                $.notify(
-                    '🌍 Sub-Store',
-                    `⚠️ 组合订阅 ${name} 包含重复节点 ${proxy.name}！`,
-                    '请仔细检测配置！',
-                    {
-                        'media-url':
-                            'https://cdn3.iconfinder.com/data/icons/seo-outline-1/512/25_code_program_programming_develop_bug_search_developer-512.png',
-                    },
-                );
-                break;
+            return ProxyUtils.produce(
+                proxies,
+                platform,
+                produceType,
+                produceOpts,
+            );
+        } catch (err) {
+            if (
+                !shouldFallbackIgnoreFailedRemoteSub(
+                    collectionIgnoreFailedRemoteSub,
+                )
+            ) {
+                throw err;
             }
-            exist[proxy.name] = true;
+
+            notifyIgnoreFailedRemoteSubFallback({
+                mode: collectionIgnoreFailedRemoteSub,
+                error: err,
+                notify: (error) => {
+                    $.notify(
+                        `🌍 Sub-Store 处理组合订阅失败`,
+                        `❌ ${collection.name}`,
+                        `🤔 原因：${error.message ?? error}`,
+                    );
+                },
+            });
+            $.error(
+                `组合订阅 ${collection.name} 启用兜底后返回空结果: ${
+                    err.message ?? err
+                }`,
+            );
+
+            return buildEmptySubscriptionOutput({
+                platform,
+                produceType,
+                produceOpts,
+            });
         }
-        return ProxyUtils.produce(proxies, platform, produceType, produceOpts);
     } else if (type === 'rule') {
         const allRules = $.read(RULES_KEY);
         const rule = findByName(allRules, name);
@@ -596,8 +699,126 @@ async function produceArtifact({
                   )
                 : { $content: filesContent, $files: files, $options };
 
+        processed.$content = normalizeClashYaml(processed?.$content ?? '');
+
         return (all ? processed : processed?.$content) ?? '';
     }
+}
+
+function createArtifactUploadBatches(names, batchSize) {
+    const batches = [];
+    for (let index = 0; index < names.length; index += batchSize) {
+        batches.push(names.slice(index, index + batchSize));
+    }
+    return batches;
+}
+
+function normalizeUploadResponseFiles(files) {
+    if (Array.isArray(files)) {
+        return {
+            isGitLab: true,
+            files: Object.fromEntries(files.map((item) => [item.path, item])),
+        };
+    }
+
+    return {
+        isGitLab: false,
+        files: files || {},
+    };
+}
+
+function logUploadResponse(body) {
+    delete body.history;
+    delete body.forks;
+    delete body.owner;
+    if (body.files) {
+        Object.values(body.files).forEach((file) => {
+            delete file.content;
+        });
+    }
+    $.info('上传配置响应:');
+    $.info(JSON.stringify(body, null, 2));
+}
+
+function resolveArtifactUploadUrl(body, artifactName) {
+    const { files, isGitLab } = normalizeUploadResponseFiles(body.files);
+    const encodedName = encodeURIComponent(artifactName);
+    const raw_url = files[encodedName]?.raw_url;
+    const new_url = isGitLab
+        ? raw_url
+        : raw_url?.replace(/\/raw\/[^/]*\/(.*)/, '/raw/$1');
+    $.info(
+        `上传配置完成\n文件列表: ${Object.keys(files).join(
+            ', ',
+        )}\n当前文件: ${encodedName}\n响应返回的原始链接: ${raw_url}\n处理完的新链接: ${new_url}`,
+    );
+    return new_url;
+}
+
+async function uploadArtifactBatches({ allArtifacts, files, valid, invalid }) {
+    const settings = $.read(SETTINGS_KEY) || {};
+    const batchSize = normalizeArtifactSyncBatchSize(
+        settings.artifactSyncBatchSize,
+    );
+    const batches = createArtifactUploadBatches(valid, batchSize);
+    const uploaded = [];
+
+    $.info(
+        `准备分批上传同步配置: 共 ${valid.length} 个, 每批 ${batchSize} 个, 批次数 ${batches.length}`,
+    );
+
+    for (let index = 0; index < batches.length; index++) {
+        const batchNames = batches[index];
+        const batchFiles = Object.fromEntries(
+            batchNames.map((name) => [
+                encodeURIComponent(name),
+                files[encodeURIComponent(name)],
+            ]),
+        );
+
+        try {
+            $.info(
+                `正在上传第 ${index + 1}/${batches.length} 批同步配置: ${batchNames.join(
+                    ', ',
+                )}`,
+            );
+            const resp = await syncToGist(batchFiles);
+            const body = JSON.parse(resp.body);
+            logUploadResponse(body);
+
+            for (const artifact of allArtifacts) {
+                if (
+                    artifact.sync &&
+                    artifact.source &&
+                    batchNames.includes(artifact.name)
+                ) {
+                    const newUrl = resolveArtifactUploadUrl(
+                        body,
+                        artifact.name,
+                    );
+                    if (newUrl) {
+                        artifact.updated = new Date().getTime();
+                        artifact.url = newUrl;
+                        uploaded.push(artifact.name);
+                    } else {
+                        $.error(
+                            `同步配置 ${artifact.name} 上传成功但响应中未找到文件链接`,
+                        );
+                        invalid.push(artifact.name);
+                    }
+                }
+            }
+        } catch (e) {
+            $.error(
+                `第 ${index + 1}/${batches.length} 批同步配置上传失败: ${batchNames.join(
+                    ', ',
+                )}, 原因: ${e.message ?? e}`,
+            );
+            invalid.push(...batchNames);
+        }
+    }
+
+    return uploaded;
 }
 
 async function syncArtifacts() {
@@ -681,6 +902,7 @@ async function syncArtifacts() {
                                 'include-unsupported-proxy':
                                     artifact.includeUnsupportedProxy,
                                 useMihomoExternal,
+                                prettyYaml: artifact.prettyYaml,
                             },
                         });
 
@@ -713,59 +935,22 @@ async function syncArtifacts() {
             );
         }
 
-        const resp = await syncToGist(files);
-        const body = JSON.parse(resp.body);
-
-        delete body.history;
-        delete body.forks;
-        delete body.owner;
-        Object.values(body.files).forEach((file) => {
-            delete file.content;
+        const uploaded = await uploadArtifactBatches({
+            allArtifacts,
+            files,
+            valid,
+            invalid,
         });
-        $.info('上传配置响应:');
-        $.info(JSON.stringify(body, null, 2));
-
-        for (const artifact of allArtifacts) {
-            if (
-                artifact.sync &&
-                artifact.source &&
-                valid.includes(artifact.name)
-            ) {
-                artifact.updated = new Date().getTime();
-                // extract real url from gist
-                let files = body.files;
-                let isGitLab;
-                if (Array.isArray(files)) {
-                    isGitLab = true;
-                    files = Object.fromEntries(
-                        files.map((item) => [item.path, item]),
-                    );
-                }
-                const raw_url =
-                    files[encodeURIComponent(artifact.name)]?.raw_url;
-                const new_url = isGitLab
-                    ? raw_url
-                    : raw_url?.replace(/\/raw\/[^/]*\/(.*)/, '/raw/$1');
-                $.info(
-                    `上传配置完成\n文件列表: ${Object.keys(files).join(
-                        ', ',
-                    )}\n当前文件: ${encodeURIComponent(
-                        artifact.name,
-                    )}\n响应返回的原始链接: ${raw_url}\n处理完的新链接: ${new_url}`,
-                );
-                artifact.url = new_url;
-            }
-        }
 
         $.write(allArtifacts, ARTIFACTS_KEY);
         $.info('上传配置成功');
 
         if (invalid.length > 0) {
             throw new Error(
-                `同步配置成功 ${valid.length} 个, 失败 ${invalid.length} 个, 详情请查看日志`,
+                `同步配置成功 ${uploaded.length} 个, 失败 ${invalid.length} 个, 详情请查看日志`,
             );
         } else {
-            $.info(`同步配置成功 ${valid.length} 个`);
+            $.info(`同步配置成功 ${uploaded.length} 个`);
         }
     } catch (e) {
         $.error(`同步配置失败，原因：${e.message ?? e}`);
@@ -835,6 +1020,7 @@ async function syncArtifact(req, res) {
             produceOpts: {
                 'include-unsupported-proxy': artifact.includeUnsupportedProxy,
                 useMihomoExternal,
+                prettyYaml: artifact.prettyYaml,
             },
         });
 
@@ -855,32 +1041,8 @@ async function syncArtifact(req, res) {
         artifact.updated = new Date().getTime();
         const body = JSON.parse(resp.body);
 
-        delete body.history;
-        delete body.forks;
-        delete body.owner;
-        Object.values(body.files).forEach((file) => {
-            delete file.content;
-        });
-        $.info('上传配置响应:');
-        $.info(JSON.stringify(body, null, 2));
-
-        let files = body.files;
-        let isGitLab;
-        if (Array.isArray(files)) {
-            isGitLab = true;
-            files = Object.fromEntries(files.map((item) => [item.path, item]));
-        }
-        const raw_url = files[encodeURIComponent(artifact.name)]?.raw_url;
-        const new_url = isGitLab
-            ? raw_url
-            : raw_url?.replace(/\/raw\/[^/]*\/(.*)/, '/raw/$1');
-        $.info(
-            `上传配置完成\n文件列表: ${Object.keys(files).join(
-                ', ',
-            )}\n当前文件: ${encodeURIComponent(
-                artifact.name,
-            )}\n响应返回的原始链接: ${raw_url}\n处理完的新链接: ${new_url}`,
-        );
+        logUploadResponse(body);
+        const new_url = resolveArtifactUploadUrl(body, artifact.name);
         artifact.url = new_url;
         $.write(allArtifacts, ARTIFACTS_KEY);
         success(res, artifact);
@@ -897,4 +1059,4 @@ async function syncArtifact(req, res) {
     }
 }
 
-export { produceArtifact, syncArtifacts };
+export { produceArtifact, syncArtifacts, uploadArtifactBatches };

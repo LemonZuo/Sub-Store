@@ -1,4 +1,4 @@
-import * as peggy from 'peggy';
+import peggy from 'peggy';
 const grammars = String.raw`
 // global initializer
 {{
@@ -37,7 +37,7 @@ const grammars = String.raw`
     }
 }
 
-start = (anytls/shadowsocks/vmess/trojan/https/http/snell/socks5/socks5_tls/tuic/tuic_v5/wireguard/hysteria2/ssh/direct) {
+start = (anytls/shadowsocks/vmess/trojan/https/http/snell/socks5/socks5_tls/tuic/tuic_v5/wireguard/hysteria2/ssh/trust_tunnel/direct) {
     return proxy;
 }
 
@@ -122,6 +122,11 @@ anytls = tag equals "anytls" address (passwordk/reuse/ip_version/underlying_prox
     proxy.type = "anytls";
     proxy.tls = true;
 }
+trust_tunnel = tag equals "trust-tunnel" address (usernamek/passwordk/reuse/ip_version/underlying_proxy/tos/allow_other_interface/interface/test_url/test_udp/test_timeout/hybrid/no_error_alert/tls_fingerprint/tls_verification/sni/fast_open/tfo/block_quic/others)* {
+    proxy.type = "trusttunnel";
+    proxy.tls = true;
+}
+
 direct = tag equals "direct" (udp_relay/ip_version/underlying_proxy/tos/allow_other_interface/interface/test_url/test_udp/test_timeout/hybrid/no_error_alert/fast_open/tfo/block_quic/others)* {
     proxy.type = "direct";
 }
@@ -186,7 +191,8 @@ username = & {
 password = comma match:[^,]+ { proxy.password = match.join("").replace(/^"(.*)"$/, '$1').replace(/^'(.*?)'$/, '$1'); }
 
 tls = comma "tls" equals flag:bool { proxy.tls = flag; }
-sni = comma "sni" equals sni:("off"/domain) { 
+sni = comma "sni" equals match:[^,]+ { 
+    const sni = match.join("").replace(/^"(.*)"$/, '$1');
     if (sni === "off") {
         proxy["disable-sni"] = true;
     } else {
@@ -222,7 +228,7 @@ ws_headers = comma "ws-headers" equals headers:$[^,]+ {
 ws_path = comma "ws-path" equals path:uri { obfs.path = path.trim().replace(/^"(.*?)"$/, '$1').replace(/^'(.*?)'$/, '$1'); }
 
 obfs = comma "obfs" equals type:("http"/"tls") { obfs.type = type; }
-obfs_host = comma "obfs-host" equals host:domain { obfs.host = host; };
+obfs_host = comma "obfs-host" equals match:[^,]+ { obfs.host = match.join("").replace(/^"(.*)"$/, '$1'); };
 obfs_uri = comma "obfs-uri" equals path:uri { obfs.path = path }
 uri = $[^,]+
 

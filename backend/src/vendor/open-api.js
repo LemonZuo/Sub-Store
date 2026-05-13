@@ -1,12 +1,15 @@
 /* eslint-disable no-undef */
+import { installConsoleLogCapture } from '@/utils/debug-logs';
+
 const isQX = typeof $task !== 'undefined';
 const isLoon = typeof $loon !== 'undefined';
+// 可能有一些兼容环境依赖于这个, 先不改成 $environment.surge-version
 const isSurge = typeof $httpClient !== 'undefined' && !isLoon;
 const isNode = eval(`typeof process !== "undefined"`); // eval is needed in order to avoid browserify processing
 const isStash =
     'undefined' !== typeof $environment && $environment['stash-version'];
 const isShadowRocket = 'undefined' !== typeof $rocket;
-const isEgern = 'object' == typeof egern;
+const isEgern = 'undefined' !== typeof Egern && Egern.version;
 const isLanceX = 'undefined' != typeof $native;
 const isGUIforCores = typeof $Plugins !== 'undefined';
 import { Base64 } from 'js-base64';
@@ -63,6 +66,7 @@ export class OpenAPI {
             }
         })();
         this.initCache();
+        installConsoleLogCapture(this);
 
         const delay = (t, v) =>
             new Promise(function (resolve) {
@@ -274,7 +278,7 @@ export class OpenAPI {
                 content +
                 (openURL ? `\n点击跳转: ${openURL}` : '') +
                 (mediaURL ? `\n多媒体: ${mediaURL}` : '');
-            console.log(`${title}\n${subtitle}\n${content_}\n\n`);
+            console.log(`[Notify] ${title}\n${subtitle}\n${content_}\n\n`);
 
             let push = eval('process.env.SUB_STORE_PUSH_SERVICE');
             if (push) {
@@ -347,6 +351,10 @@ export class OpenAPI {
 
     info(msg) {
         console.log(`[${this.name}] INFO: ${msg}`);
+    }
+
+    warn(msg) {
+        console.log(`[${this.name}] WARN: ${msg}`);
     }
 
     error(msg) {
@@ -462,6 +470,16 @@ export function HTTP(defaultOptions = { baseURL: '' }) {
                 if (isNode) {
                     const undici = eval("require('undici')");
                     const { socksDispatcher } = eval("require('fetch-socks')");
+                    const defaultMaxHeaderSize = 32 * 1024;
+                    const parsedMaxHeaderSize = Number.parseInt(
+                        eval('process.env.SUB_STORE_MAX_HEADER_SIZE'),
+                        10,
+                    );
+                    const maxHeaderSize =
+                        Number.isInteger(parsedMaxHeaderSize) &&
+                        parsedMaxHeaderSize > 0
+                            ? parsedMaxHeaderSize
+                            : defaultMaxHeaderSize;
                     const {
                         ProxyAgent,
                         EnvHttpProxyAgent,
@@ -479,9 +497,7 @@ export function HTTP(defaultOptions = { baseURL: '' }) {
                         },
                         bodyTimeout: opts.timeout,
                         headersTimeout: opts.timeout,
-                        maxHeaderSize:
-                            eval('process.env.SUB_STORE_MAX_HEADER_SIZE') ||
-                            32 * 1024,
+                        maxHeaderSize,
                     };
                     const tlsOptions = {
                         rejectUnauthorized:

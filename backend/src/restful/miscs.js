@@ -41,34 +41,50 @@ export default function register($app) {
                 );
         })
         .post((req, res) => {
-            let { content } = req.body;
             try {
-                content = JSON.parse(Base64.decode(content));
-                if (Object.keys(content.settings).length === 0) {
-                    throw new Error('备份文件应该至少包含 settings 字段');
-                }
-            } catch (err) {
+                let { content } = req.body;
                 try {
-                    content = JSON.parse(content);
-                    if (Object.keys(content.settings).length === 0) {
+                    content = JSON.parse(Base64.decode(content));
+                    if (!(Object.keys(content.settings).length >= 0)) {
                         throw new Error('备份文件应该至少包含 settings 字段');
                     }
                 } catch (err) {
-                    $.error(
-                        `备份文件校验失败, 无法还原\nReason: ${
-                            err.message ?? err
-                        }`,
-                    );
-                    throw new Error('备份文件校验失败, 无法还原');
+                    try {
+                        content = JSON.parse(content);
+                        if (!(Object.keys(content.settings).length >= 0)) {
+                            throw new Error(
+                                '备份文件应该至少包含 settings 字段',
+                            );
+                        }
+                    } catch (err) {
+                        $.error(
+                            `备份文件校验失败, 无法还原\nReason: ${
+                                err.message ?? err
+                            }`,
+                        );
+                        throw new Error('备份文件校验失败, 无法还原');
+                    }
                 }
+                $.write(JSON.stringify(content, null, `  `), '#sub-store');
+                if ($.env.isNode) {
+                    $.cache = content;
+                    $.persistCache();
+                }
+                migrate();
+                success(res);
+            } catch (e) {
+                $.error(
+                    `Failed to restore backup data.\nReason: ${e.message ?? e}`,
+                );
+                failed(
+                    res,
+                    new RequestInvalidError(
+                        'INVALID_BACKUP_DATA',
+                        'Invalid backup data, failed to restore!',
+                        `Reason: ${e.message ?? e}`,
+                    ),
+                );
             }
-            $.write(JSON.stringify(content, null, `  `), '#sub-store');
-            if ($.env.isNode) {
-                $.cache = content;
-                $.persistCache();
-            }
-            migrate();
-            success(res);
         });
 
     if (ENV().isNode) {
@@ -96,6 +112,8 @@ export default function register($app) {
 }
 
 function getEnv(req, res) {
+    env.feature = env.feature || {};
+    env.feature.archive = true;
     if (req.query.share) {
         env.feature.share = true;
     }
@@ -115,8 +133,8 @@ function getEnv(req, res) {
 }
 
 async function refresh(_, res) {
-    // 1. get GitHub avatar and artifact store
-    await updateAvatar();
+    // 1. get artifact store
+    // await updateAvatar();
     await updateArtifactStore();
 
     // 2. clear resource cache
@@ -205,13 +223,13 @@ async function gistBackupAction(action, keep, encode) {
             content = await gist.download(GIST_BACKUP_FILE_NAME);
             try {
                 content = JSON.parse(Base64.decode(content));
-                if (Object.keys(content.settings).length === 0) {
+                if (!(Object.keys(content.settings).length >= 0)) {
                     throw new Error('备份文件应该至少包含 settings 字段');
                 }
             } catch (err) {
                 try {
                     content = JSON.parse(content);
-                    if (Object.keys(content.settings).length === 0) {
+                    if (!(Object.keys(content.settings).length >= 0)) {
                         throw new Error('备份文件应该至少包含 settings 字段');
                     }
                 } catch (err) {

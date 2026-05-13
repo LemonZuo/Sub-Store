@@ -1,4 +1,14 @@
-import { isPresent } from '@/core/proxy-utils/producers/utils';
+import {
+    getWireGuardAddressWithCIDR,
+    isPresent,
+    isShadowsocksOverTls,
+    produceProxyListOutput,
+    supportsShadowsocksV2rayPluginMode,
+} from '@/core/proxy-utils/producers/utils';
+import {
+    deleteHttpUpgradeEarlyDataMetadata,
+    normalizeWebSocketEarlyDataPath,
+} from '../transport-path';
 import $ from '@/core/app';
 
 export default function Shadowrocket_Producer() {
@@ -7,26 +17,34 @@ export default function Shadowrocket_Producer() {
         const list = proxies
             .filter((proxy) => {
                 if (opts['include-unsupported-proxy']) return true;
-                if (proxy.type === 'snell' && proxy.version >= 4) {
-                    return false;
-                } else if (['mieru', 'sudoku', 'naive'].includes(proxy.type)) {
-                    return false;
-                } else if (
-                    proxy.encryption &&
-                    proxy.encryption !== 'none' &&
-                    ['vless'].includes(proxy.type)
+                if (
+                    !supportsShadowsocksV2rayPluginMode(proxy, [
+                        'websocket',
+                        'quic',
+                        'http2',
+                        'mkcp',
+                        'grpc',
+                    ])
                 ) {
                     return false;
+                } else if (proxy.type === 'snell' && proxy.version >= 4) {
+                    return false;
                 } else if (
-                    ['anytls'].includes(proxy.type) &&
-                    proxy.network &&
-                    (!['tcp'].includes(proxy.network) ||
-                        (['tcp'].includes(proxy.network) &&
-                            proxy['reality-opts']))
+                    [
+                        'tailscale',
+                        'mieru',
+                        'sudoku',
+                        'naive',
+                        'masque',
+                        'openvpn',
+                    ].includes(proxy.type)
                 ) {
                     return false;
                 } else if (['xhttp'].includes(proxy.network)) {
-                    return false;
+                    $.warn(
+                        `VLESS XHTTP 结构复杂, Shadowrocket 可能无法完全兼容`,
+                    );
+                    return true;
                 }
                 return true;
             })
@@ -122,6 +140,8 @@ export default function Shadowrocket_Producer() {
                     proxy['preshared-key'] =
                         proxy['preshared-key'] ?? proxy['pre-shared-key'];
                     proxy['pre-shared-key'] = proxy['preshared-key'];
+                    proxy.ip = getWireGuardAddressWithCIDR(proxy, 'ipv4');
+                    proxy.ipv6 = getWireGuardAddressWithCIDR(proxy, 'ipv6');
                 } else if (proxy.type === 'snell' && proxy.version < 3) {
                     delete proxy.udp;
                 } else if (proxy.type === 'vless') {
@@ -143,6 +163,13 @@ export default function Shadowrocket_Producer() {
                         delete proxy['shadow-tls-password'];
                         delete proxy['shadow-tls-sni'];
                         delete proxy['shadow-tls-version'];
+                    }
+                    if (isShadowsocksOverTls(proxy)) {
+                        if (isPresent(proxy, 'sni')) {
+                            proxy.servername = proxy.sni;
+                            // 先不删 没有明确的规范
+                            // delete proxy.sni;
+                        }
                     }
                 }
 
@@ -185,29 +212,18 @@ export default function Shadowrocket_Producer() {
                     }
                 }
                 if (['ws'].includes(proxy.network)) {
-                    const networkPath = proxy[`${proxy.network}-opts`]?.path;
-                    if (networkPath) {
-                        const reg = /^(.*?)(?:\?ed=(\d+))?$/;
-                        // eslint-disable-next-line no-unused-vars
-                        const [_, path = '', ed = ''] = reg.exec(networkPath);
-                        proxy[`${proxy.network}-opts`].path = path;
-                        if (ed !== '') {
-                            proxy['ws-opts']['early-data-header-name'] =
-                                'Sec-WebSocket-Protocol';
-                            proxy['ws-opts']['max-early-data'] = parseInt(
-                                ed,
-                                10,
-                            );
-                        }
-                    } else {
-                        proxy[`${proxy.network}-opts`] =
-                            proxy[`${proxy.network}-opts`] || {};
-                        proxy[`${proxy.network}-opts`].path = '/';
+                    const networkOptsKey = `${proxy.network}-opts`;
+                    proxy[networkOptsKey] = proxy[networkOptsKey] || {};
+                    if (!proxy[networkOptsKey].path) {
+                        proxy[networkOptsKey].path = '/';
                     }
+                    normalizeWebSocketEarlyDataPath(proxy[networkOptsKey]);
                 }
+
                 if (proxy['plugin-opts']?.tls) {
                     if (isPresent(proxy, 'skip-cert-verify')) {
                         proxy['plugin-opts']['skip-cert-verify'] =
+                            proxy['plugin-opts']['skip-cert-verify'] ||
                             proxy['skip-cert-verify'];
                     }
                 }
@@ -219,6 +235,7 @@ export default function Shadowrocket_Producer() {
                         'hysteria2',
                         'juicity',
                         'anytls',
+                        'trusttunnel',
                         'naive',
                     ].includes(proxy.type)
                 ) {
@@ -243,12 +260,17 @@ export default function Shadowrocket_Producer() {
                 delete proxy.id;
                 delete proxy.resolved;
                 delete proxy['no-resolve'];
+                delete proxy['ip-cidr'];
+                delete proxy['ipv6-cidr'];
                 if (type !== 'internal') {
                     for (const key in proxy) {
                         if (proxy[key] == null || /^_/i.test(key)) {
                             delete proxy[key];
                         }
                     }
+                    deleteHttpUpgradeEarlyDataMetadata(
+                        proxy[`${proxy.network}-opts`],
+                    );
                 }
                 if (
                     ['grpc'].includes(proxy.network) &&
@@ -259,14 +281,7 @@ export default function Shadowrocket_Producer() {
                 }
                 return proxy;
             });
-        return type === 'internal'
-            ? list
-            : 'proxies:\n' +
-                  list
-                      .map((proxy) => {
-                          return '  - ' + JSON.stringify(proxy) + '\n';
-                      })
-                      .join('');
+        return produceProxyListOutput(list, type, opts);
     };
     return { type, produce };
 }

@@ -23,9 +23,15 @@ import { findByName } from '@/utils/database';
 import { produceArtifact } from '@/restful/sync';
 import { getFlag, removeFlag, getISO, MMDB } from '@/utils/geo';
 import Gist from '@/utils/gist';
-import { isPresent } from './producers/utils';
+import {
+    isPresent,
+    isShadowsocksOverTls,
+    normalizeWireGuardInterface,
+} from './producers/utils';
 import { doh } from '@/utils/dns';
 import JSON5 from 'json5';
+import { hex_md5 } from '@/vendor/md5';
+import SurgeMac_Producer from './producers/surgemac';
 
 function preprocess(raw) {
     for (const processor of PROXY_PREPROCESSORS) {
@@ -84,9 +90,16 @@ function parse(raw) {
         if (['vless', 'vmess'].includes(proxy.type)) {
             const isProxyUUIDValid = isValidUUID(proxy.uuid);
             if (!isProxyUUIDValid) {
-                $.info(`UUID may be invalid: ${proxy.name} ${proxy.uuid}`);
+                $.warn(`UUID may be invalid: ${proxy.name} ${proxy.uuid}`);
             }
             // return isProxyUUIDValid;
+        } else if (['hysteria2'].includes(proxy.type)) {
+            if (proxy.obfs && !proxy['obfs-password']) {
+                $.error(
+                    `Proxy ${proxy.name} has obfs ${proxy.obfs} but missing obfs-password`,
+                );
+                return false;
+            }
         }
         return true;
     });
@@ -239,6 +252,13 @@ function produce(proxies, targetPlatform, type, opts = {}) {
         throw new Error(`Target platform: ${targetPlatform} is not supported!`);
     }
 
+    const normalizedTarget = String(targetPlatform).toLowerCase();
+    const supportedShadowsocksOverTlsTargets = new Set([
+        'qx',
+        'quantumultx',
+        'shadowrocket',
+    ]);
+
     const sni_off_supported = /Surge|SurgeMac|Shadowrocket/i.test(
         targetPlatform,
     );
@@ -250,12 +270,78 @@ function produce(proxies, targetPlatform, type, opts = {}) {
             return false;
         }
 
+        if (
+            isShadowsocksOverTls(proxy) &&
+            !supportedShadowsocksOverTlsTargets.has(normalizedTarget) &&
+            !opts['include-unsupported-proxy']
+        ) {
+            return false;
+        }
+
         // 对于 vless 和 vmess 代理,需要额外验证 UUID
         if (['vless', 'vmess'].includes(proxy.type)) {
             const isProxyUUIDValid = isValidUUID(proxy.uuid);
             if (!isProxyUUIDValid)
-                $.info(`UUID may be invalid: ${proxy.name} ${proxy.uuid}`);
+                $.warn(`UUID may be invalid: ${proxy.name} ${proxy.uuid}`);
             // return isProxyUUIDValid;
+            const isVlessType = proxy.type === 'vless';
+            const realityChecks = isVlessType
+                ? [
+                      ['reality-opts', proxy['reality-opts']],
+                      [
+                          'xhttp download-settings reality-opts',
+                          proxy['xhttp-opts']?.['download-settings']?.[
+                              'reality-opts'
+                          ],
+                      ],
+                  ]
+                : [];
+            for (const [realityLabel, realityOpts] of realityChecks) {
+                if (realityOpts && !isNotBlank(realityOpts['public-key'])) {
+                    // When the main proxy (上行) uses Reality with a valid
+                    // public-key, an explicit empty-string public-key in xhttp
+                    // download-settings reality-opts (下行) is intentional:
+                    // it explicitly cancels Reality inheritance for the
+                    // download stream. This is a legitimate Mihomo config.
+                    // Distinguish from reality-opts:{} (missing public-key
+                    // entirely) which represents a broken/incomplete Reality
+                    // config parsed from a malformed URI and should still be
+                    // rejected.
+                    if (
+                        realityLabel ===
+                            'xhttp download-settings reality-opts' &&
+                        isNotBlank(proxy['reality-opts']?.['public-key']) &&
+                        realityOpts['public-key'] === ''
+                    ) {
+                        continue;
+                    }
+                    // Intentional: a VLESS Reality node without public-key is
+                    // not a valid Mihomo export or regenerated share link. We
+                    // keep the marker while parsing so callers can inspect the
+                    // broken config, then stop export here instead of silently
+                    // emitting invalid Reality output.
+                    $.error(
+                        `Skipping VLESS Reality proxy ${proxy.name}: empty ${realityLabel}.public-key`,
+                    );
+                    return false;
+                }
+            }
+
+            const xhttpOpts = proxy['xhttp-opts'];
+            if (
+                isVlessType &&
+                proxy.network === 'xhttp' &&
+                xhttpOpts?.mode === 'stream-one' &&
+                xhttpOpts['download-settings']
+            ) {
+                // Match Mihomo's outbound validation: xhttp download-settings
+                // require split transports, so stream-one is rejected instead
+                // of emitting a config/share link that Mihomo will not accept.
+                $.error(
+                    `Skipping VLESS xhttp proxy ${proxy.name}: mode "stream-one" cannot be used with download-settings`,
+                );
+                return false;
+            }
         }
 
         return true;
@@ -290,6 +376,9 @@ function produce(proxies, targetPlatform, type, opts = {}) {
                 proxy.port = getRandomPort(proxy.ports);
             }
         }
+        if (proxy.type === 'wireguard') {
+            normalizeWireGuardInterface(proxy);
+        }
 
         return proxy;
     });
@@ -302,16 +391,37 @@ function produce(proxies, targetPlatform, type, opts = {}) {
                     return producer.produce(proxy, type, opts);
                 } catch (err) {
                     $.error(
-                        `Cannot produce proxy: ${JSON.stringify(
-                            proxy,
-                            null,
-                            2,
-                        )}\nReason: ${err}`,
+                        `Cannot produce proxy: ${proxy.name}\nReason: ${err}`,
                     );
                     return '';
                 }
             })
             .filter((line) => line.length > 0);
+        if (opts._merged && opts.localPort >= 1) {
+            list.push(
+                SurgeMac_Producer().produce(
+                    {
+                        name: opts._merged.name,
+                        type: 'external',
+                        udp: true,
+                        exec: opts._merged.exec,
+                        'local-port': opts.localPort,
+                        args: [
+                            '-config',
+                            Base64.encode(
+                                JSON.stringify({
+                                    ...opts._merged.config,
+                                    'mixed-port': opts.localPort,
+                                }),
+                            ),
+                        ],
+                        addresses: [],
+                    },
+                    type,
+                    opts,
+                ),
+            );
+        }
         list = type === 'internal' ? list : list.join('\n');
         if (
             targetPlatform.startsWith('Surge') &&
@@ -351,6 +461,7 @@ export const ProxyUtils = {
     Buffer,
     Base64,
     JSON5,
+    hex_md5,
 };
 
 function tryParse(parser, line) {
@@ -390,6 +501,38 @@ function lastParse(proxy) {
     }
     if (typeof proxy.password === 'number') {
         proxy.password = numberToString(proxy.password);
+    }
+    if (proxy['hop-interval'] != null) {
+        const hopInterval = `${proxy['hop-interval']}`.trim();
+        const hopIntervalRangeMatch = hopInterval.match(/^(\d+)\s*-\s*(\d+)$/);
+
+        if (hopIntervalRangeMatch) {
+            const hopIntervalMin = parseInt(hopIntervalRangeMatch[1], 10);
+            const hopIntervalMax = parseInt(hopIntervalRangeMatch[2], 10);
+
+            if (hopIntervalMin > 0 && hopIntervalMin <= hopIntervalMax) {
+                // 暂时只在统一收口阶段拆分 mihomo 的 hop-interval 区间写法，
+                // 不对其他客户端做进一步转换，等 mihomo / sing-box 新版覆盖率上来后再统一处理。
+                proxy['hop-interval'] = hopIntervalMin;
+                proxy['hop-interval-max'] = hopIntervalMax;
+            } else {
+                delete proxy['hop-interval'];
+                delete proxy['hop-interval-max'];
+            }
+        } else if (/^\d+$/.test(hopInterval)) {
+            const parsedHopInterval = parseInt(hopInterval, 10);
+
+            if (parsedHopInterval > 0) {
+                proxy['hop-interval'] = parsedHopInterval;
+                delete proxy['hop-interval-max'];
+            } else {
+                delete proxy['hop-interval'];
+                delete proxy['hop-interval-max'];
+            }
+        } else {
+            delete proxy['hop-interval'];
+            delete proxy['hop-interval-max'];
+        }
     }
     if (
         ['ss'].includes(proxy.type) &&
@@ -465,6 +608,7 @@ function lastParse(proxy) {
             'hysteria2',
             'juicity',
             'anytls',
+            'trusttunnel',
             'naive',
         ].includes(proxy.type)
     ) {
@@ -520,11 +664,12 @@ function lastParse(proxy) {
             proxy[`${proxy.network}-opts`].path = [transportPath];
         }
     }
-    if (proxy.tls && !proxy.sni) {
-        if (!isIP(proxy.server)) {
-            proxy.sni = proxy.server;
-        }
-        if (!proxy.sni && proxy.network) {
+    // 允许设置 sni 为空字符串且为防止影响其他逻辑, 这里先改成这样判断
+    // 本质上是为了防止本来应该使用 server 作为 sni 的情况下, 若之后进行了域名解析, 导致 server 变成 ip 丢失了 sni
+    // 为了兼容性, 暂时先这么改
+    if (proxy.tls && !proxy.sni && proxy.sni !== '') {
+        // 传输层若有设置就使用
+        if (proxy.network) {
             let transportHost = proxy[`${proxy.network}-opts`]?.headers?.Host;
             transportHost = Array.isArray(transportHost)
                 ? transportHost[0]
@@ -532,6 +677,10 @@ function lastParse(proxy) {
             if (transportHost) {
                 proxy.sni = transportHost;
             }
+        }
+        // 不区分是不是域名, 总之如果到这里还没 sni, 可以设置域名 server 为 sni
+        if (!proxy.sni && !isIP(proxy.server)) {
+            proxy.sni = proxy.server;
         }
     }
     // if (['hysteria', 'hysteria2', 'tuic'].includes(proxy.type)) {
@@ -660,6 +809,30 @@ function lastParse(proxy) {
         delete proxy['shadow-tls-sni'];
         delete proxy['shadow-tls-password'];
         delete proxy['shadow-tls-version'];
+    }
+    if (['tuic'].includes(proxy.type)) {
+        proxy.alpn = Array.isArray(proxy.alpn)
+            ? proxy.alpn
+            : [proxy.alpn || 'h3'];
+        proxy['congestion-controller'] =
+            proxy['congestion-controller'] || 'cubic';
+        proxy['udp-relay-mode'] = proxy['udp-relay-mode'] || 'native';
+    }
+    if (['wireguard'].includes(proxy.type)) {
+        if (Array.isArray(proxy.peers) && proxy.peers.length > 0) {
+            const validPeer =
+                proxy.peers.find((peer) => peer.ip && peer.ipv6) ||
+                proxy.peers.find((peer) => peer.ip || peer.ipv6);
+            if (validPeer) {
+                if (!proxy.ip) {
+                    proxy.ip = proxy.peers[0]?.ip;
+                }
+                if (!proxy.ipv6) {
+                    proxy.ipv6 = proxy.peers[0]?.ipv6;
+                }
+            }
+        }
+        normalizeWireGuardInterface(proxy);
     }
     return proxy;
 }
