@@ -11,7 +11,7 @@ RUN wget -O sub-store.bundle.js https://github.com/sub-store-org/Sub-Store/relea
 # --------------------
 # 第二阶段：构建运行镜像
 # --------------------
-FROM node:18-alpine AS runner
+FROM node:22-alpine AS runner
 
 WORKDIR /app
 
